@@ -54,7 +54,7 @@ fun SettingsScreen() {
                 SliderRow(
                     "Luminosité éco", "${Settings.ecoBrightness}%",
                     Settings.ecoBrightness / 100f, accent
-                ) { f -> Settings.setEcoBrightness((f * 100).roundToInt()) }
+                ) { f -> Settings.updateEcoBrightness((f * 100).roundToInt()) }
             }
         }
         item { ToggleRow("Verrou tactile", Settings.lock, true, accent) { Settings.setLock(ctx, it) } }
