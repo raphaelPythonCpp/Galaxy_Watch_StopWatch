@@ -9,7 +9,7 @@ import androidx.wear.protolayout.DimensionBuilders.sp
 import androidx.wear.protolayout.LayoutElementBuilders
 import androidx.wear.protolayout.ModifiersBuilders
 import androidx.wear.protolayout.ResourceBuilders.Resources
-import androidx.wear.protolayout.TileBuilders.Tile
+import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.protolayout.TimelineBuilders.Timeline
 import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.TileService
