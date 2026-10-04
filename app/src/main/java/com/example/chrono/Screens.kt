@@ -131,16 +131,20 @@ fun SessionScreen() {
     val s = History.sessions.getOrNull(Ui.sessionIndex)
     val eco = Settings.eco
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
+    // Calculs hors de ScalingLazyColumn : « remember » n'est pas autorisé dans son contenu
+    val rows = remember(s) {
+        if (s == null) emptyList<Lap>() else {
+            var t = 0L
+            s.laps.mapIndexed { i, v -> t += v; Lap(i + 1, v, t) }
+        }
+    }
+    val vMin = rows.minOfOrNull { it.lapTime } ?: 0L
+    val vMax = rows.maxOfOrNull { it.lapTime } ?: 0L
+
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         if (s == null) {
             item { Text("Séance introuvable", fontSize = 12.sp, color = Dim) }
         } else {
-            val rows = remember(s) {
-                var t = 0L
-                s.laps.mapIndexed { i, v -> t += v; Lap(i + 1, v, t) }
-            }
-            val vMin = rows.minOfOrNull { it.lapTime } ?: 0L
-            val vMax = rows.maxOfOrNull { it.lapTime } ?: 0L
             item { Text(fmtDate(s.ts), fontSize = 13.sp, color = Dim) }
             item { Text(fmtFull(s.total), fontSize = 20.sp, color = Color.White, style = Tnum) }
             if (rows.isEmpty()) {
