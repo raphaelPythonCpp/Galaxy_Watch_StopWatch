@@ -20,6 +20,7 @@ class StopwatchTileService : TileService() {
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<Tile> {
         Stopwatch.load(this)
+        Settings.load(this)
 
         // Les ids de boutons portent un « nonce » : un clic n'est pris en compte qu'une fois,
         // même si le système renvoie l'ancien lastClickableId lors d'un rafraîchissement.
@@ -37,7 +38,7 @@ class StopwatchTileService : TileService() {
 
         val tile = Tile.Builder()
             .setResourcesVersion("2")
-            .setFreshnessIntervalMillis(if (Stopwatch.running) 1000L else 0L)
+            .setFreshnessIntervalMillis(if (Stopwatch.running) (if (Settings.eco) 5000L else 1000L) else 0L)
             .setTileTimeline(Timeline.fromLayoutElement(layout()))
             .build()
         return CallbackToFutureAdapter.getFuture<Tile> { c -> c.set(tile); "tile" }
@@ -97,6 +98,7 @@ class StopwatchTileService : TileService() {
 
     private fun layout(): LayoutElementBuilders.LayoutElement {
         val running = Stopwatch.running
+        val eco = Settings.eco
         val column = LayoutElementBuilders.Column.Builder()
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
             .addContent(
@@ -117,7 +119,7 @@ class StopwatchTileService : TileService() {
                         button(
                             "right",
                             if (running) "Stop" else "Start",
-                            if (running) 0xFFB91C1C else 0xFF34D399,
+                            if (running) (if (eco) 0xFF3A3F47 else 0xFFB91C1C) else (if (eco) 0xFFFFFFFF else 0xFF34D399),
                             if (running) 0xFFFFFFFF else 0xFF000000
                         )
                     )

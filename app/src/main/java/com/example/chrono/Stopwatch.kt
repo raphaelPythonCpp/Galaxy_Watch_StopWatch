@@ -120,7 +120,11 @@ object Stopwatch {
     private fun buzz(c: Context, strong: Boolean) {
         try {
             val v = c.getSystemService(Vibrator::class.java) ?: return
-            val effect = if (strong) {
+            Settings.load(c)
+            val effect = if (Settings.eco) {
+                // Mode éco : une seule impulsion courte
+                VibrationEffect.createOneShot(if (strong) 80 else 40, 200)
+            } else if (strong) {
                 VibrationEffect.createWaveform(longArrayOf(0, 140, 70, 140), intArrayOf(0, 255, 0, 255), -1)
             } else {
                 VibrationEffect.createOneShot(55, 190)
@@ -139,4 +143,5 @@ fun fmtMain(ms: Long): String {
 }
 
 fun fmtCs(ms: Long): String = String.format(Locale.ROOT, ".%02d", (ms / 10) % 100)
+fun fmtTenth(ms: Long): String = ".${(ms / 100) % 10}"
 fun fmtFull(ms: Long): String = fmtMain(ms) + fmtCs(ms)
