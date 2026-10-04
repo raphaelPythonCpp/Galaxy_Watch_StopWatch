@@ -65,7 +65,7 @@ object Settings {
         textLevel = x
         p(c).edit().putInt("textLevel", x).apply()
     }
-    fun setEcoBrightness(v: Int) { ecoBrightness = v.coerceIn(0, 100) }
+    fun updateEcoBrightness(v: Int) { ecoBrightness = v.coerceIn(0, 100) }
 
     /** channel : 0 = R, 1 = G, 2 = B. Sauvegarde différée (persistRgb) pour ne pas écrire à chaque glissement. */
     fun setRgbChannel(channel: Int, v: Int) {
