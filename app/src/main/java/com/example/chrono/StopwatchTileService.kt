@@ -8,6 +8,7 @@ import androidx.wear.protolayout.DimensionBuilders.expand
 import androidx.wear.protolayout.DimensionBuilders.sp
 import androidx.wear.protolayout.LayoutElementBuilders
 import androidx.wear.protolayout.ModifiersBuilders
+import androidx.wear.protolayout.ResourceBuilders
 import androidx.wear.protolayout.ResourceBuilders.Resources
 import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.protolayout.TimelineBuilders.Timeline
@@ -35,7 +36,7 @@ class StopwatchTileService : TileService() {
         }
 
         val tile = Tile.Builder()
-            .setResourcesVersion("1")
+            .setResourcesVersion("2")
             .setFreshnessIntervalMillis(if (Stopwatch.running) 1000L else 0L)
             .setTileTimeline(Timeline.fromLayoutElement(layout()))
             .build()
@@ -45,7 +46,14 @@ class StopwatchTileService : TileService() {
     override fun onTileResourcesRequest(
         requestParams: RequestBuilders.ResourcesRequest
     ): ListenableFuture<Resources> {
-        val res = Resources.Builder().setVersion("1").build()
+        val img = ResourceBuilders.ImageResource.Builder()
+            .setAndroidResourceByResId(
+                ResourceBuilders.AndroidImageResourceByResId.Builder()
+                    .setResourceId(R.drawable.ic_stopwatch)
+                    .build()
+            )
+            .build()
+        val res = Resources.Builder().setVersion("2").addIdToImageMapping("ic", img).build()
         return CallbackToFutureAdapter.getFuture<Resources> { c -> c.set(res); "res" }
     }
 
@@ -68,8 +76,8 @@ class StopwatchTileService : TileService() {
             .setOnClick(ActionBuilders.LoadAction.Builder().build())
             .build()
         return LayoutElementBuilders.Box.Builder()
-            .setWidth(dp(64f))
-            .setHeight(dp(64f))
+            .setWidth(dp(58f))
+            .setHeight(dp(58f))
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
             .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
             .setModifiers(
@@ -77,7 +85,7 @@ class StopwatchTileService : TileService() {
                     .setBackground(
                         ModifiersBuilders.Background.Builder()
                             .setColor(argb(bg))
-                            .setCorner(ModifiersBuilders.Corner.Builder().setRadius(dp(32f)).build())
+                            .setCorner(ModifiersBuilders.Corner.Builder().setRadius(dp(29f)).build())
                             .build()
                     )
                     .setClickable(click)
@@ -91,12 +99,19 @@ class StopwatchTileService : TileService() {
         val running = Stopwatch.running
         val column = LayoutElementBuilders.Column.Builder()
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
+            .addContent(
+                LayoutElementBuilders.Image.Builder()
+                    .setResourceId("ic")
+                    .setWidth(dp(22f))
+                    .setHeight(dp(22f))
+                    .build()
+            )
             .addContent(text(fmtMain(Stopwatch.elapsed()), 38f, 0xFFFFFFFF))
-            .addContent(LayoutElementBuilders.Spacer.Builder().setHeight(dp(10f)).build())
+            .addContent(LayoutElementBuilders.Spacer.Builder().setHeight(dp(6f)).build())
             .addContent(
                 LayoutElementBuilders.Row.Builder()
                     .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
-                    .addContent(button("left", if (running) "Tour" else "RàZ", 0xFF2B2F36, 0xFFFFFFFF))
+                    .addContent(button("left", if (running) "Tour" else "Reset", 0xFF2B2F36, 0xFFFFFFFF))
                     .addContent(LayoutElementBuilders.Spacer.Builder().setWidth(dp(12f)).build())
                     .addContent(
                         button(

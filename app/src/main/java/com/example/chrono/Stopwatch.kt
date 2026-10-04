@@ -116,13 +116,16 @@ object Stopwatch {
     /** Bouton de gauche : tour si en marche, sinon remise à zéro. */
     fun left(c: Context) { if (running) lap(c) else reset(c) }
 
-    private fun buzz(c: Context, heavy: Boolean) {
+    /** strong = start/stop (double impulsion longue et max) ; sinon tour (impulsion courte, plus faible). */
+    private fun buzz(c: Context, strong: Boolean) {
         try {
-            c.getSystemService(Vibrator::class.java)?.vibrate(
-                VibrationEffect.createPredefined(
-                    if (heavy) VibrationEffect.EFFECT_HEAVY_CLICK else VibrationEffect.EFFECT_CLICK
-                )
-            )
+            val v = c.getSystemService(Vibrator::class.java) ?: return
+            val effect = if (strong) {
+                VibrationEffect.createWaveform(longArrayOf(0, 140, 70, 140), intArrayOf(0, 255, 0, 255), -1)
+            } else {
+                VibrationEffect.createOneShot(55, 190)
+            }
+            v.vibrate(effect)
         } catch (e: Exception) { }
     }
 }

@@ -2,10 +2,13 @@ package com.example.chrono
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.graphics.drawable.Icon
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationText
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.CountUpTimeReference
+import androidx.wear.watchface.complications.data.MonochromaticImage
+import androidx.wear.watchface.complications.data.MonochromaticImageComplicationData
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.data.TimeDifferenceComplicationText
@@ -16,16 +19,33 @@ import java.time.Instant
 
 class StopwatchComplicationService : SuspendingComplicationDataSourceService() {
 
-    override fun getPreviewData(type: ComplicationType): ComplicationData? =
-        if (type == ComplicationType.SHORT_TEXT) build(754_000L, false) else null
-
-    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
-        if (request.complicationType != ComplicationType.SHORT_TEXT) return null
-        Stopwatch.load(this)
-        return build(Stopwatch.elapsed(), Stopwatch.running)
+    override fun getPreviewData(type: ComplicationType): ComplicationData? = when (type) {
+        ComplicationType.SHORT_TEXT -> shortText(754_000L, false)
+        ComplicationType.MONOCHROMATIC_IMAGE -> iconData()
+        else -> null
     }
 
-    private fun build(elapsed: Long, running: Boolean): ComplicationData {
+    override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
+        Stopwatch.load(this)
+        return when (request.complicationType) {
+            ComplicationType.SHORT_TEXT -> shortText(Stopwatch.elapsed(), Stopwatch.running)
+            ComplicationType.MONOCHROMATIC_IMAGE -> iconData()
+            else -> null
+        }
+    }
+
+    private fun icon() =
+        MonochromaticImage.Builder(Icon.createWithResource(this, R.drawable.ic_stopwatch)).build()
+
+    private fun tap(): PendingIntent =
+        PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+
+    private fun desc() = PlainComplicationText.Builder("Chronomètre").build()
+
+    private fun iconData(): ComplicationData =
+        MonochromaticImageComplicationData.Builder(icon(), desc()).setTapAction(tap()).build()
+
+    private fun shortText(elapsed: Long, running: Boolean): ComplicationData {
         // En marche, c'est le cadran qui affiche le temps en direct ; à l'arrêt, valeur figée.
         val text: ComplicationText = if (running) {
             TimeDifferenceComplicationText.Builder(
@@ -35,11 +55,9 @@ class StopwatchComplicationService : SuspendingComplicationDataSourceService() {
         } else {
             PlainComplicationText.Builder(fmtMain(elapsed)).build()
         }
-        val tap = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-        )
-        return ShortTextComplicationData.Builder(
-            text, PlainComplicationText.Builder("Chronomètre").build()
-        ).setTapAction(tap).build()
+        return ShortTextComplicationData.Builder(text, desc())
+            .setMonochromaticImage(icon())
+            .setTapAction(tap())
+            .build()
     }
 }
