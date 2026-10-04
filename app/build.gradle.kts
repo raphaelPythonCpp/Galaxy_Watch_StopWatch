@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.chrono"
         minSdk = 30
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.2"
+        versionCode = 5
+        versionName = "2.3"
         resourceConfigurations += listOf("fr", "en")
     }
 
@@ -67,6 +67,9 @@ dependencies {
     implementation("androidx.wear.compose:compose-foundation:1.4.0")
 
     implementation("androidx.wear:wear:1.3.0")
+    implementation("androidx.wear:wear-ongoing:1.0.0")
+    implementation("androidx.core:core:1.13.1")
+    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
     implementation("androidx.wear.tiles:tiles:1.4.1")
     implementation("androidx.wear.protolayout:protolayout:1.2.1")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")

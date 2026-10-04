@@ -27,6 +27,7 @@ class StopwatchComplicationService : SuspendingComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         Stopwatch.load(this)
+        Settings.load(this)
         return when (request.complicationType) {
             ComplicationType.SHORT_TEXT -> shortText(Stopwatch.elapsed(), Stopwatch.running)
             ComplicationType.MONOCHROMATIC_IMAGE -> iconData()

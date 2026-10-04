@@ -10,9 +10,9 @@ import androidx.wear.protolayout.LayoutElementBuilders
 import androidx.wear.protolayout.ModifiersBuilders
 import androidx.wear.protolayout.ResourceBuilders
 import androidx.wear.protolayout.ResourceBuilders.Resources
-import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.protolayout.TimelineBuilders.Timeline
 import androidx.wear.tiles.RequestBuilders
+import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.ListenableFuture
 
@@ -22,15 +22,14 @@ class StopwatchTileService : TileService() {
         Stopwatch.load(this)
         Settings.load(this)
 
-        // Les ids de boutons portent un « nonce » : un clic n'est pris en compte qu'une fois,
-        // même si le système renvoie l'ancien lastClickableId lors d'un rafraîchissement.
+        // Un clic n'est pris en compte qu'une fois (nonce dans l'id du bouton)
         val id = requestParams.currentState.lastClickableId
         val parts = id.split(":")
         if (parts.size == 2 && parts[1].toIntOrNull() == Stopwatch.nonce) {
             Stopwatch.quietly {
                 when (parts[0]) {
                     "right" -> Stopwatch.toggle(this)
-                    "left" -> Stopwatch.left(this)
+                    "left" -> if (Stopwatch.running) Stopwatch.lap(this)
                 }
                 Stopwatch.bumpNonce(this)
             }
@@ -99,6 +98,25 @@ class StopwatchTileService : TileService() {
     private fun layout(): LayoutElementBuilders.LayoutElement {
         val running = Stopwatch.running
         val eco = Settings.eco
+        val pal = makePalette(Settings.rgb)
+
+        val rightBg: Long = if (running) {
+            if (eco) 0xFF3A3F47 else pal.inverseDark.argbLong()
+        } else {
+            if (eco) 0xFFFFFFFF else pal.accent.argbLong()
+        }
+        val rightFg: Long = if (running) 0xFFFFFFFF
+        else (if (eco) 0xFF000000 else pal.onAccent.argbLong())
+
+        // Le Reset n'existe que dans l'appli (appui long 3 s) : le tile n'affiche que Start, ou Tour + Stop
+        val row = LayoutElementBuilders.Row.Builder()
+            .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
+        if (running) {
+            row.addContent(button("left", "Tour", 0xFF2B2F36, 0xFFFFFFFF))
+            row.addContent(LayoutElementBuilders.Spacer.Builder().setWidth(dp(12f)).build())
+        }
+        row.addContent(button("right", if (running) "Stop" else "Start", rightBg, rightFg))
+
         val column = LayoutElementBuilders.Column.Builder()
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
             .addContent(
@@ -110,21 +128,7 @@ class StopwatchTileService : TileService() {
             )
             .addContent(text(fmtMain(Stopwatch.elapsed()), 38f, 0xFFFFFFFF))
             .addContent(LayoutElementBuilders.Spacer.Builder().setHeight(dp(6f)).build())
-            .addContent(
-                LayoutElementBuilders.Row.Builder()
-                    .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
-                    .addContent(button("left", if (running) "Tour" else "Reset", 0xFF2B2F36, 0xFFFFFFFF))
-                    .addContent(LayoutElementBuilders.Spacer.Builder().setWidth(dp(12f)).build())
-                    .addContent(
-                        button(
-                            "right",
-                            if (running) "Stop" else "Start",
-                            if (running) (if (eco) 0xFF3A3F47 else 0xFFB91C1C) else (if (eco) 0xFFFFFFFF else 0xFF34D399),
-                            if (running) 0xFFFFFFFF else 0xFF000000
-                        )
-                    )
-                    .build()
-            )
+            .addContent(row.build())
             .build()
         return LayoutElementBuilders.Box.Builder()
             .setWidth(expand())

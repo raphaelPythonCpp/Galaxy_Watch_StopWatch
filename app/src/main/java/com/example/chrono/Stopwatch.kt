@@ -16,7 +16,7 @@ import java.util.Locale
 
 data class Lap(val index: Int, val lapTime: Long, val total: Long)
 
-/** État unique partagé par l'appli, le tile et la complication. Sauvegardé à chaque action. */
+/** État unique partagé par l'appli, le tile et la complication. */
 object Stopwatch {
     var running by mutableStateOf(false)
         private set
@@ -56,7 +56,8 @@ object Stopwatch {
         }
     }
 
-    private fun save(c: Context) {
+    /** notify = true seulement quand l'état start/stop/reset change (pas à chaque tour). */
+    private fun save(c: Context, notify: Boolean) {
         val app = c.applicationContext
         prefs(app).edit()
             .putBoolean("run", running)
@@ -65,6 +66,7 @@ object Stopwatch {
             .putInt("nonce", nonce)
             .putString("laps", laps.joinToString(";") { "${it.index},${it.lapTime},${it.total}" })
             .apply()
+        if (!notify) return
         try {
             ComplicationDataSourceUpdateRequester
                 .create(app, ComponentName(app, StopwatchComplicationService::class.java))
@@ -77,24 +79,25 @@ object Stopwatch {
         }
     }
 
-    /** Pendant une requête de tile, on évite de redemander une mise à jour du tile. */
     fun quietly(block: () -> Unit) {
         quiet = true
         try { block() } finally { quiet = false }
     }
 
-    fun bumpNonce(c: Context) { nonce++; save(c) }
+    fun bumpNonce(c: Context) { nonce++; save(c, true) }
 
     fun start(c: Context) {
         if (running) return
         startedAt = now(); running = true
-        buzz(c, true); save(c)
+        buzz(c, true); save(c, true)
+        Ongoing.show(c, startedAt - accumulated)
     }
 
     fun stop(c: Context) {
         if (!running) return
         accumulated += now() - startedAt; running = false
-        buzz(c, true); save(c)
+        buzz(c, true); save(c, true)
+        Ongoing.hide(c)
     }
 
     fun lap(c: Context) {
@@ -102,27 +105,35 @@ object Stopwatch {
         val t = elapsed()
         val last = laps.firstOrNull()?.total ?: 0L
         laps.add(0, Lap(laps.size + 1, t - last, t))
-        buzz(c, false); save(c)
+        buzz(c, false); save(c, false)
+    }
+
+    /** Retire le dernier tour enregistré (le chrono continue). */
+    fun undoLap(c: Context) {
+        if (laps.isEmpty()) return
+        laps.removeAt(0)
+        buzz(c, false); save(c, false)
     }
 
     fun reset(c: Context) {
+        if (!running && accumulated > 0L) {
+            History.add(c, Session(now(), accumulated, laps.reversed().map { it.lapTime }))
+        }
         running = false; accumulated = 0L; startedAt = 0L; laps.clear()
-        buzz(c, false); save(c)
+        buzz(c, true); save(c, true)
+        Ongoing.hide(c)
     }
 
     fun toggle(c: Context) { if (running) stop(c) else start(c) }
     /** Bouton physique : tour si en marche, sinon start. */
     fun primary(c: Context) { if (running) lap(c) else start(c) }
-    /** Bouton de gauche : tour si en marche, sinon remise à zéro. */
-    fun left(c: Context) { if (running) lap(c) else reset(c) }
 
-    /** strong = start/stop (double impulsion longue et max) ; sinon tour (impulsion courte, plus faible). */
-    private fun buzz(c: Context, strong: Boolean) {
+    /** strong = start/stop/reset ; sinon tour. */
+    fun buzz(c: Context, strong: Boolean) {
         try {
             val v = c.getSystemService(Vibrator::class.java) ?: return
             Settings.load(c)
             val effect = if (Settings.eco) {
-                // Mode éco : une seule impulsion courte
                 VibrationEffect.createOneShot(if (strong) 80 else 40, 200)
             } else if (strong) {
                 VibrationEffect.createWaveform(longArrayOf(0, 140, 70, 140), intArrayOf(0, 255, 0, 255), -1)
@@ -134,7 +145,9 @@ object Stopwatch {
     }
 }
 
+/** Partie principale : mm:ss (ou h:mm:ss), ou « secondes seules » si l'option est activée. */
 fun fmtMain(ms: Long): String {
+    if (Settings.secMode) return (ms / 1000).toString()
     val s = (ms / 1000) % 60
     val m = (ms / 60000) % 60
     val h = ms / 3600000
@@ -142,6 +155,6 @@ fun fmtMain(ms: Long): String {
     else String.format(Locale.ROOT, "%02d:%02d", m, s)
 }
 
-fun fmtCs(ms: Long): String = String.format(Locale.ROOT, ".%02d", (ms / 10) % 100)
+/** Jamais plus que les dixièmes. */
 fun fmtTenth(ms: Long): String = ".${(ms / 100) % 10}"
-fun fmtFull(ms: Long): String = fmtMain(ms) + fmtCs(ms)
+fun fmtFull(ms: Long): String = fmtMain(ms) + fmtTenth(ms)

@@ -1,39 +1,24 @@
 package com.example.chrono
 
+import android.Manifest
 import android.app.Activity
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.ambient.AmbientLifecycleObserver
@@ -41,46 +26,28 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.delay
-import kotlin.math.abs
-
-private val Green = Color(0xFF34D399)
-private val Blue = Color(0xFF3B82F6)
-private val Red = Color(0xFFF87171)
-private val RedBtn = Color(0xFFB91C1C)
-private val Dim = Color(0xFF9CA3AF)
-private val Soft = Color(0xFFD1D5DB)
-private val RingTrack = Color(0xFF0E1218)
-private val SurfaceBtn = Color(0xFF2B2F36)
-private val RowBg = Color(0xFF1B1F26)
-private val OffTrack = Color(0xFF3A3F47)
-private val Tnum = TextStyle(fontFeatureSettings = "tnum")
-
-/** Dégradé vert -> bleu -> rouge, t entre 0 (min) et 1 (max). */
-fun gradient(t: Float): Color {
-    val x = t.coerceIn(0f, 1f)
-    return if (x < 0.5f) lerp(Green, Blue, x * 2f) else lerp(Blue, Red, (x - 0.5f) * 2f)
-}
-
-object Ui {
-    var showSettings by mutableStateOf(false)
-    var ambient by mutableStateOf(false)
-}
 
 class MainActivity : ComponentActivity() {
     private var lastWake = 0L
-
-    private val screenOn = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            lastWake = SystemClock.uptimeMillis()
-        }
-    }
+    private var longHandled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Stopwatch.load(this)
         Settings.load(this)
+        History.load(this)
         Ui.ambient = false
-        registerReceiver(screenOn, IntentFilter(Intent.ACTION_SCREEN_ON))
+
+        // Permission de notification (pastille « chrono en cours » sur le cadran), demandée une seule fois
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            val sp = getSharedPreferences("settings", MODE_PRIVATE)
+            if (!sp.getBoolean("askedNotif", false)) {
+                sp.edit().putBoolean("askedNotif", true).apply()
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            }
+        }
 
         if (Settings.aodActive) {
             lifecycle.addObserver(
@@ -98,102 +65,177 @@ class MainActivity : ComponentActivity() {
         setContent { App() }
     }
 
+    // Détection du réveil sans récepteur de diffusion (moins de travail en arrière-plan)
     override fun onStart() {
         super.onStart()
         lastWake = SystemClock.uptimeMillis()
     }
 
-    override fun onDestroy() {
-        try { unregisterReceiver(screenOn) } catch (e: Exception) { }
-        super.onDestroy()
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) lastWake = SystemClock.uptimeMillis()
     }
 
+    // Bouton physique du bas (Retour)
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event?.repeatCount == 0) handleButton()
+            val first = event?.repeatCount == 0
+            if (first) longHandled = false
+            if (Ui.screen == Screen.MAIN && Ui.locked) {
+                // Verrou tactile : appui court = action (au relâchement), appui long = déverrouiller
+                if (first) event?.startTracking()
+                return true
+            }
+            if (first) handleButton()
             return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean =
-        if (keyCode == KeyEvent.KEYCODE_BACK) true else super.onKeyUp(keyCode, event)
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && Ui.locked) {
+            longHandled = true
+            Ui.locked = false
+            Stopwatch.buzz(this, true)
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (Ui.locked && Ui.screen == Screen.MAIN && !longHandled) handleButton()
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
 
     private fun handleButton() {
-        if (Ui.showSettings) { Ui.showSettings = false; return }
+        if (Ui.screen != Screen.MAIN) {
+            Ui.screen = if (Ui.screen == Screen.SESSION) Screen.HISTORY else Screen.MAIN
+            return
+        }
         val pm = getSystemService(PowerManager::class.java)
         val justWoke = Ui.ambient ||
             pm?.isInteractive == false ||
             SystemClock.uptimeMillis() - lastWake < 600
+        // Écran éteint / ambiant / à peine rallumé : on réveille seulement, pas de tour
         if (!justWoke) Stopwatch.primary(this)
     }
 }
 
+private class LapStats(val min: Long, val max: Long, val avg: Long)
+
 @Composable
 fun App() {
-    var now by remember { mutableLongStateOf(Stopwatch.elapsed()) }
+    val ctx = LocalContext.current
+    val now = remember { mutableLongStateOf(Stopwatch.elapsed()) }
     val running = Stopwatch.running
     val acc = Stopwatch.accumulated
     val ambient = Ui.ambient
     val eco = Settings.eco
+    val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
 
+    // Mise à jour : 0,1 s (normal) ou 1 s (éco / ambiant), calée sur le changement de chiffre.
+    // withFrameMillis ne reprend que si l'écran est visible : aucun réveil quand l'écran est éteint.
     LaunchedEffect(running, acc, ambient, eco) {
-        now = Stopwatch.elapsed()
+        now.longValue = Stopwatch.elapsed()
         if (running) {
-            if (ambient) {
-                while (true) { delay(1000); now = Stopwatch.elapsed() }
-            } else if (eco) {
-                // Éco : ~10 mises à jour/s, et aucune quand l'écran n'est pas visible
-                while (true) { withFrameMillis { now = Stopwatch.elapsed() }; delay(100) }
-            } else {
-                var last = 0L
-                while (true) {
-                    withFrameMillis { t ->
-                        if (t - last >= 33) { last = t; now = Stopwatch.elapsed() }
-                    }
-                }
+            val step = if (ambient || eco) 1000L else 100L
+            while (true) {
+                withFrameMillis { now.longValue = Stopwatch.elapsed() }
+                delay(step - Stopwatch.elapsed() % step)
             }
         }
     }
 
+    // Verrou tactile : actif tant que le chrono tourne (si l'option est activée)
+    LaunchedEffect(running, Settings.lock) { Ui.locked = running && Settings.lock }
+
+    // Luminosité du mode éco
+    LaunchedEffect(eco, Settings.ecoBrightness) {
+        (ctx as? Activity)?.window?.let { w ->
+            val lp = w.attributes
+            lp.screenBrightness =
+                if (eco) (Settings.ecoBrightness / 100f).coerceAtLeast(0.01f)
+                else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            w.attributes = lp
+        }
+    }
+
+    // Statistiques recalculées seulement quand la liste des tours change
     val laps = Stopwatch.laps
-    val vMin = laps.minOfOrNull { it.lapTime } ?: 0L
-    val vMax = laps.maxOfOrNull { it.lapTime } ?: 0L
-    fun tOf(v: Long): Float = if (vMax > vMin) (v - vMin).toFloat() / (vMax - vMin) else 0f
-    fun colorOf(v: Long): Color = if (eco) Color.White else gradient(tOf(v))
+    val lastTotal = laps.firstOrNull()?.total ?: 0L
+    val stats = remember(laps.size, lastTotal) {
+        LapStats(
+            laps.minOfOrNull { it.lapTime } ?: 0L,
+            laps.maxOfOrNull { it.lapTime } ?: 0L,
+            if (laps.isEmpty()) 0L else laps.sumOf { it.lapTime } / laps.size
+        )
+    }
+    // Bague : 1 tour = 1' au départ, puis = meilleur tour
+    val ringRef = if (laps.isEmpty()) 60_000L else stats.min.coerceAtLeast(3000L)
     val idle = !running && acc == 0L
 
     MaterialTheme {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             when {
                 ambient -> AmbientScreen(now)
-                Ui.showSettings -> SettingsScreen()
+                Ui.screen == Screen.SETTINGS -> SettingsScreen()
+                Ui.screen == Screen.HISTORY -> HistoryScreen()
+                Ui.screen == Screen.SESSION -> SessionScreen()
                 else -> {
-                    if (Settings.ringActive) Ring { now }
+                    if (Settings.ringActive) {
+                        Ring { (((now.longValue - lastTotal).coerceAtLeast(0L)) % ringRef).toFloat() / ringRef }
+                    }
+                    HoldRing()
                     ScalingLazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        item { Header(now, running, eco) }
+                        item { Header(now, running, eco, pal, laps.isNotEmpty()) }
                         if (laps.size >= 2) {
                             item {
-                                val avg = laps.sumOf { it.lapTime } / laps.size
                                 Text(
-                                    "Moy. " + fmtFull(avg),
-                                    fontSize = 12.sp, color = colorOf(avg), style = Tnum,
+                                    "Moy. " + fmtFull(stats.avg),
+                                    fontSize = Settings.textSp.sp,
+                                    color = lapColor(stats.avg, stats.min, stats.max, eco, pal),
+                                    style = Tnum,
                                     modifier = Modifier.padding(top = 6.dp)
                                 )
                             }
                         }
                         itemsIndexed(laps) { i, lap ->
-                            LapRow(lap, laps.getOrNull(i + 1)?.lapTime, colorOf(lap.lapTime))
+                            LapRow(
+                                lap, laps.getOrNull(i + 1)?.lapTime,
+                                lapColor(lap.lapTime, stats.min, stats.max, eco, pal),
+                                lapMarker(lap.lapTime, stats.min, stats.max, laps.size),
+                                Settings.textSp
+                            )
                         }
                     }
                     if (idle) {
                         Box(
                             Modifier.fillMaxSize().padding(top = 16.dp),
                             contentAlignment = Alignment.TopCenter
-                        ) { MenuButton { Ui.showSettings = true } }
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                MenuButton { Ui.screen = Screen.SETTINGS }
+                                HistoryButton { Ui.screen = Screen.HISTORY }
+                            }
+                        }
+                    }
+                    if (Ui.locked) {
+                        Box(
+                            Modifier.fillMaxSize().pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        awaitPointerEvent().changes.forEach { it.consume() }
+                                    }
+                                }
+                            },
+                            contentAlignment = Alignment.TopCenter
+                        ) { Box(Modifier.padding(top = 18.dp)) { LockIcon() } }
                     }
                 }
             }
@@ -202,174 +244,42 @@ fun App() {
 }
 
 @Composable
-fun Ring(now: () -> Long) {
-    Canvas(Modifier.fillMaxSize().padding(3.dp)) {
-        val stroke = 6.dp.toPx()
-        val topLeft = Offset(stroke / 2, stroke / 2)
-        val sz = Size(size.width - stroke, size.height - stroke)
-        drawArc(RingTrack, 0f, 360f, false, topLeft, sz, style = Stroke(stroke))
-        val head = -90f + (now() % 60000L) / 60000f * 360f
-        rotate(degrees = head - 45f, pivot = center) {
-            drawArc(
-                brush = Brush.sweepGradient(
-                    0f to RingTrack,
-                    0.125f to Color.White,
-                    0.9f to Color.White,
-                    1f to RingTrack,
-                    center = center
-                ),
-                startAngle = 0f,
-                sweepAngle = 45f,
-                useCenter = false,
-                topLeft = topLeft,
-                size = sz,
-                style = Stroke(stroke, cap = StrokeCap.Round)
-            )
-        }
-    }
-}
-
-@Composable
-fun AmbientScreen(ms: Long) {
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        Text(fmtMain(ms), fontSize = 44.sp, color = Color(0xFFB0B0B0), style = Tnum)
-    }
-}
-
-@Composable
-fun MenuButton(onClick: () -> Unit) {
-    Box(
-        Modifier.size(32.dp).clip(CircleShape).background(SurfaceBtn).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.size(14.dp)) {
-            val w = 1.8.dp.toPx()
-            for (i in 0..2) {
-                val y = size.height * (0.15f + 0.35f * i)
-                drawLine(Color.White, Offset(0f, y), Offset(size.width, y), strokeWidth = w, cap = StrokeCap.Round)
-            }
-        }
-    }
-}
-
-/** Interrupteur à glissière (pastille). */
-@Composable
-fun Pill(checked: Boolean, accent: Color) {
-    Box(
-        Modifier.width(38.dp).height(22.dp)
-            .clip(RoundedCornerShape(11.dp))
-            .background(if (checked) accent else OffTrack)
-    ) {
-        Box(
-            Modifier.align(if (checked) Alignment.CenterEnd else Alignment.CenterStart)
-                .padding(3.dp).size(16.dp).clip(CircleShape)
-                .background(if (checked) Color.Black else Color.White)
-        )
-    }
-}
-
-/** [texte] [espace] [slider on/off] */
-@Composable
-fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, accent: Color, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(0.92f)
-            .alpha(if (enabled) 1f else 0.4f)
-            .clip(RoundedCornerShape(20.dp))
-            .background(RowBg)
-            .clickable(enabled = enabled) { onChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 13.sp, color = Color.White, modifier = Modifier.weight(1f))
-        Pill(checked, accent)
-    }
-}
-
-@Composable
-fun SettingsScreen() {
+fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, hasLaps: Boolean) {
     val ctx = LocalContext.current
-    val eco = Settings.eco
-    val accent = if (eco) Color.White else Green
-    ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Text("Réglages", fontSize = 14.sp, color = Dim) }
-        item {
-            ToggleRow("Cercle", Settings.ringActive, !eco, accent) { Settings.setRing(ctx, it) }
-        }
-        item {
-            ToggleRow("Always-on display", Settings.aodActive, !eco, accent) {
-                Settings.setAod(ctx, it)
-                (ctx as? Activity)?.recreate()
-            }
-        }
-        item {
-            ToggleRow("Mode éco", eco, true, accent) {
-                Settings.setEco(ctx, it)
-                (ctx as? Activity)?.recreate()
-            }
-        }
-        item {
-            Chip(
-                onClick = { Ui.showSettings = false },
-                label = { Text("Retour") },
-                colors = ChipDefaults.secondaryChipColors(),
-                modifier = Modifier.fillMaxWidth(0.92f)
-            )
+    val undoOn = Settings.undoBtn
+    val bs = if (undoOn) 48.dp else 58.dp
+    val gap = if (undoOn) 8.dp else 10.dp
+    val fs = if (undoOn) 11.sp else 12.sp
+    val startBg = if (eco) Color.White else pal.accent
+    val startFg = if (eco) Color.Black else pal.onAccent
+    val stopBg = if (eco) OffTrack else pal.inverseDark
+
+    val undo: @Composable () -> Unit = {
+        RoundButton("Annuler", bs, SurfaceBtn, Color.White, 10.sp, hasLaps) { Stopwatch.undoLap(ctx) }
+    }
+    val left: @Composable () -> Unit = {
+        if (running) {
+            RoundButton("Tour", bs, SurfaceBtn, Color.White, fs) { Stopwatch.lap(ctx) }
+        } else {
+            // Reset protégé : maintenir 3 s (snake blanc = progression)
+            HoldButton("Reset", bs, SurfaceBtn, Color.White, fs, 3000L) { Stopwatch.reset(ctx) }
         }
     }
-}
+    val right: @Composable () -> Unit = {
+        if (running) {
+            RoundButton("Stop", bs, stopBg, Color.White, fs) { Stopwatch.toggle(ctx) }
+        } else {
+            RoundButton("Start", bs, startBg, startFg, fs) { Stopwatch.toggle(ctx) }
+        }
+    }
+    val order = if (undoOn) listOf(undo, left, right) else listOf(left, right)
+    val shown = if (Settings.lefty) order.reversed() else order
 
-@Composable
-fun Header(ms: Long, running: Boolean, eco: Boolean) {
-    val ctx = LocalContext.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                fmtMain(ms),
-                fontSize = if (ms >= 3_600_000L) 30.sp else 38.sp,
-                fontWeight = FontWeight.Medium, color = Color.White, style = Tnum
-            )
-            Text(
-                if (eco) fmtTenth(ms) else fmtCs(ms),
-                fontSize = 18.sp, color = Dim, style = Tnum,
-                modifier = Modifier.padding(bottom = 5.dp)
-            )
-        }
+        TimeText(now, eco)
         Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            RoundButton(if (running) "Tour" else "Reset", SurfaceBtn, Color.White) { Stopwatch.left(ctx) }
-            if (running) {
-                RoundButton("Stop", if (eco) OffTrack else RedBtn, Color.White) { Stopwatch.toggle(ctx) }
-            } else {
-                RoundButton("Start", if (eco) Color.White else Green, Color.Black) { Stopwatch.toggle(ctx) }
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            for (b in shown) b()
         }
-    }
-}
-
-@Composable
-fun RoundButton(label: String, bg: Color, fg: Color, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.size(58.dp),
-        colors = ButtonDefaults.buttonColors(backgroundColor = bg, contentColor = fg)
-    ) { Text(label, fontSize = 12.sp, color = fg) }
-}
-
-/** [n° tour] [temps total] [dt depuis le dernier tour] [écart de dt vs tour précédent] */
-@Composable
-fun LapRow(lap: Lap, prevLapTime: Long?, color: Color) {
-    val delta = if (prevLapTime == null) "" else {
-        val d = lap.lapTime - prevLapTime
-        val a = abs(d)
-        (if (d >= 0) "+" else "−") + (a / 1000) + "." + "%02d".format((a / 10) % 100)
-    }
-    Row(
-        Modifier.fillMaxWidth(0.92f).padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("%02d".format(lap.index), fontSize = 11.sp, color = Dim, style = Tnum, modifier = Modifier.width(20.dp))
-        Text(fmtFull(lap.total), fontSize = 11.sp, color = Soft, style = Tnum, modifier = Modifier.weight(1f))
-        Text(fmtFull(lap.lapTime), fontSize = 12.sp, color = color, style = Tnum, modifier = Modifier.weight(1f))
-        Text(delta, fontSize = 10.sp, color = Dim, style = Tnum, textAlign = TextAlign.End, modifier = Modifier.width(40.dp))
     }
 }
