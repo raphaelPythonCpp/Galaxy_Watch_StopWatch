@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,12 @@ fun SettingsScreen() {
         item { ToggleRow("Temps en secondes", Settings.secMode, true, accent) { Settings.setSecMode(ctx, it) } }
         item {
             SliderRow(
+                "Haut de l'écran", "${Settings.topPct}%", Settings.topPct / 100f, accent,
+                onFinish = { Settings.persistTopPct(ctx) }
+            ) { f -> Settings.updateTopPct((f * 100).roundToInt()) }
+        }
+        item {
+            SliderRow(
                 "Taille du texte", "${Settings.textLevel}/10",
                 (Settings.textLevel - 1) / 9f, accent
             ) { f -> Settings.setTextLevel(ctx, (f * 9).roundToInt() + 1) }
@@ -95,7 +102,6 @@ fun SettingsScreen() {
 @Composable
 fun HistoryScreen() {
     val ctx = LocalContext.current
-    var confirm by remember { mutableStateOf(false) }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text("Historique", fontSize = 14.sp, color = Dim) }
         if (History.sessions.isEmpty()) {
@@ -116,12 +122,14 @@ fun HistoryScreen() {
             )
         }
         item {
-            Chip(
-                onClick = { if (confirm) { History.clear(ctx); confirm = false } else confirm = true },
-                label = { Text(if (confirm) "Confirmer ?" else "Tout effacer") },
-                colors = ChipDefaults.secondaryChipColors(),
-                modifier = Modifier.fillMaxWidth(0.92f)
-            )
+            // Même mécanique que le Reset : maintenir 2 s, le snake de la couleur de référence montre la progression
+            Box(
+                Modifier.fillMaxWidth(0.92f).height(40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(SurfaceBtn)
+                    .holdToConfirm(2000L) { History.clear(ctx) },
+                contentAlignment = Alignment.Center
+            ) { Text("Tout effacer (maintenir 2 s)", fontSize = 11.sp, color = Color.White) }
         }
     }
 }

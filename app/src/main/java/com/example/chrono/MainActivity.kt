@@ -5,6 +5,8 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -13,10 +15,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -27,9 +33,30 @@ import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.delay
 
+private const val HOLD_LOCK_MS = 3000L
+
 class MainActivity : ComponentActivity() {
     private var lastWake = 0L
-    private var longHandled = false
+
+    // Appui long sur le bouton du bas (3 s) : bascule le verrou tactile. Minuterie propre :
+    // elle ne dépend pas des callbacks « long press » du système, ni de la réception du relâchement.
+    private val handler = Handler(Looper.getMainLooper())
+    private var downAt = 0L
+    private var tracking = false
+    private var holdFired = false
+    private val tick = object : Runnable {
+        override fun run() {
+            val p = (SystemClock.uptimeMillis() - downAt).toFloat() / HOLD_LOCK_MS
+            if (p >= 1f) {
+                holdFired = true
+                Ui.hold = 0f
+                toggleLock()
+            } else {
+                Ui.hold = if (p > 0.15f) p else 0f
+                handler.postDelayed(this, 16)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +64,8 @@ class MainActivity : ComponentActivity() {
         Settings.load(this)
         History.load(this)
         Ui.ambient = false
+        Ui.locked = false     // jamais verrouillé au (re)démarrage de l'appli
+        Ui.hold = 0f
 
         // Permission de notification (pastille « chrono en cours » sur le cadran), demandée une seule fois
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -65,10 +94,16 @@ class MainActivity : ComponentActivity() {
         setContent { App() }
     }
 
-    // Détection du réveil sans récepteur de diffusion (moins de travail en arrière-plan)
     override fun onStart() {
         super.onStart()
         lastWake = SystemClock.uptimeMillis()
+    }
+
+    override fun onStop() {
+        handler.removeCallbacks(tick)
+        tracking = false
+        Ui.hold = 0f
+        super.onStop()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -76,35 +111,45 @@ class MainActivity : ComponentActivity() {
         if (hasFocus) lastWake = SystemClock.uptimeMillis()
     }
 
+    /** Le verrou n'a de sens que : option activée + chrono en marche + écran principal. */
+    private fun holdApplies() =
+        Settings.lock && Stopwatch.running && Ui.screen == Screen.MAIN && !Ui.ambient
+
+    private fun toggleLock() {
+        if (Settings.lock && Stopwatch.running) {
+            Ui.locked = !Ui.locked
+            Stopwatch.buzz(this, true)
+        }
+    }
+
     // Bouton physique du bas (Retour)
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            val first = event?.repeatCount == 0
-            if (first) longHandled = false
-            if (Ui.screen == Screen.MAIN && Ui.locked) {
-                // Verrou tactile : appui court = action (au relâchement), appui long = déverrouiller
-                if (first) event?.startTracking()
-                return true
+            if (event?.repeatCount == 0) {
+                holdFired = false
+                if (holdApplies()) {
+                    // Appui court = action (au relâchement) ; maintenu 3 s = bascule du verrou tactile
+                    tracking = true
+                    downAt = SystemClock.uptimeMillis()
+                    handler.removeCallbacks(tick)
+                    handler.postDelayed(tick, 16)
+                } else {
+                    handleButton()
+                }
             }
-            if (first) handleButton()
             return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
-    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && Ui.locked) {
-            longHandled = true
-            Ui.locked = false
-            Stopwatch.buzz(this, true)
-            return true
-        }
-        return super.onKeyLongPress(keyCode, event)
-    }
-
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (Ui.locked && Ui.screen == Screen.MAIN && !longHandled) handleButton()
+            if (tracking) {
+                tracking = false
+                handler.removeCallbacks(tick)
+                Ui.hold = 0f
+                if (!holdFired) handleButton()
+            }
             return true
         }
         return super.onKeyUp(keyCode, event)
@@ -135,6 +180,7 @@ fun App() {
     val ambient = Ui.ambient
     val eco = Settings.eco
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
+    val holdColor = if (eco) Color.White else pal.accent
 
     // Mise à jour : 0,1 s (normal) ou 1 s (éco / ambiant), calée sur le changement de chiffre.
     // withFrameMillis ne reprend que si l'écran est visible : aucun réveil quand l'écran est éteint.
@@ -149,8 +195,14 @@ fun App() {
         }
     }
 
-    // Verrou tactile : actif tant que le chrono tourne (si l'option est activée)
-    LaunchedEffect(running, Settings.lock) { Ui.locked = running && Settings.lock }
+    // Verrou tactile : s'enclenche seulement quand on DÉMARRE le chrono pendant cette session de l'appli
+    // (jamais restauré après une fermeture ou un arrêt forcé), et se lève quand le chrono s'arrête.
+    var wasRunning by remember { mutableStateOf(running) }
+    LaunchedEffect(running) {
+        if (running && !wasRunning && Settings.lock) Ui.locked = true
+        if (!running) Ui.locked = false
+        wasRunning = running
+    }
 
     // Luminosité du mode éco
     LaunchedEffect(eco, Settings.ecoBrightness) {
@@ -173,9 +225,10 @@ fun App() {
             if (laps.isEmpty()) 0L else laps.sumOf { it.lapTime } / laps.size
         )
     }
-    // Bague : 1 tour = 1' au départ, puis = meilleur tour
-    val ringRef = if (laps.isEmpty()) 60_000L else stats.min.coerceAtLeast(3000L)
+    // Bague : 1 tour = 1' au départ, puis = meilleur tour (sans limite basse, seulement >= 1 ms)
+    val ringRef = if (laps.isEmpty()) 60_000L else stats.min.coerceAtLeast(1L)
     val idle = !running && acc == 0L
+    val topF = Settings.topPct / 100f
 
     MaterialTheme {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -188,30 +241,50 @@ fun App() {
                     if (Settings.ringActive) {
                         Ring { (((now.longValue - lastTotal).coerceAtLeast(0L)) % ringRef).toFloat() / ringRef }
                     }
-                    HoldRing()
-                    ScalingLazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        item { Header(now, running, eco, pal, laps.isNotEmpty()) }
-                        if (laps.size >= 2) {
-                            item {
-                                Text(
-                                    "Moy. " + fmtFull(stats.avg),
-                                    fontSize = Settings.textSp.sp,
-                                    color = lapColor(stats.avg, stats.min, stats.max, eco, pal),
-                                    style = Tnum,
-                                    modifier = Modifier.padding(top = 6.dp)
-                                )
+                    Column(Modifier.fillMaxSize()) {
+                        // Partie du haut : temps + boutons (réduite pour tenir si l'espace est petit)
+                        if (topF > 0.04f) {
+                            Box(
+                                Modifier.fillMaxWidth().weight(topF).clipToBounds(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    val need = if (Settings.undoBtn) 100.dp else 112.dp
+                                    val s = (maxHeight / need).coerceIn(0.35f, 1f)
+                                    Box(
+                                        Modifier.wrapContentSize(Alignment.Center, unbounded = true)
+                                            .graphicsLayer { scaleX = s; scaleY = s }
+                                    ) { Header(now, running, eco, pal, laps.isNotEmpty()) }
+                                }
                             }
                         }
-                        itemsIndexed(laps) { i, lap ->
-                            LapRow(
-                                lap, laps.getOrNull(i + 1)?.lapTime,
-                                lapColor(lap.lapTime, stats.min, stats.max, eco, pal),
-                                lapMarker(lap.lapTime, stats.min, stats.max, laps.size),
-                                Settings.textSp
-                            )
+                        // Partie du bas : moyenne + tours
+                        if (topF < 0.96f) {
+                            Box(Modifier.fillMaxWidth().weight(1f - topF)) {
+                                ScalingLazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    if (laps.size >= 2) {
+                                        item {
+                                            Text(
+                                                "Moy. " + fmtFull(stats.avg),
+                                                fontSize = Settings.textSp.sp,
+                                                color = lapColor(stats.avg, stats.min, stats.max, eco, pal),
+                                                style = Tnum
+                                            )
+                                        }
+                                    }
+                                    itemsIndexed(laps) { i, lap ->
+                                        LapRow(
+                                            lap, laps.getOrNull(i + 1)?.lapTime,
+                                            lapColor(lap.lapTime, stats.min, stats.max, eco, pal),
+                                            lapMarker(lap.lapTime, stats.min, stats.max, laps.size),
+                                            Settings.textSp
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     if (idle) {
@@ -226,6 +299,7 @@ fun App() {
                         }
                     }
                     if (Ui.locked) {
+                        // Bloque tout le tactile...
                         Box(
                             Modifier.fillMaxSize().pointerInput(Unit) {
                                 awaitPointerEventScope {
@@ -233,12 +307,24 @@ fun App() {
                                         awaitPointerEvent().changes.forEach { it.consume() }
                                     }
                                 }
-                            },
-                            contentAlignment = Alignment.TopCenter
-                        ) { Box(Modifier.padding(top = 18.dp)) { LockIcon() } }
+                            }
+                        )
+                        // ... sauf le cadenas : le maintenir 3 s déverrouille (2e sortie, en plus du bouton du bas)
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                            Box(
+                                Modifier.padding(top = 8.dp).size(44.dp).clip(CircleShape)
+                                    .holdToConfirm(3000L) {
+                                        Ui.locked = false
+                                        Stopwatch.buzz(ctx, true)
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) { LockIcon() }
+                        }
                     }
                 }
             }
+            // Progression des appuis longs (Reset, effacement de l'historique, verrou) : arc plein, couleur de référence
+            HoldRing(holdColor)
         }
     }
 }
@@ -261,8 +347,8 @@ fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, 
         if (running) {
             RoundButton("Tour", bs, SurfaceBtn, Color.White, fs) { Stopwatch.lap(ctx) }
         } else {
-            // Reset protégé : maintenir 3 s (snake blanc = progression)
-            HoldButton("Reset", bs, SurfaceBtn, Color.White, fs, 3000L) { Stopwatch.reset(ctx) }
+            // Reset protégé : maintenir 2 s (snake = progression)
+            HoldButton("Reset", bs, SurfaceBtn, Color.White, fs, 2000L) { Stopwatch.reset(ctx) }
         }
     }
     val right: @Composable () -> Unit = {

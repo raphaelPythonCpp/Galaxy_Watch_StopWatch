@@ -87,32 +87,19 @@ fun Ring(frac: () -> Float) {
     }
 }
 
-/** Progression de l'appui long sur Reset : snake blanc qui s'allonge depuis midi. */
+/** Progression d'un appui long : arc plein de la couleur de référence, sans dégradé, qui s'allonge depuis midi. */
 @Composable
-fun HoldRing() {
+fun HoldRing(color: Color) {
     Canvas(Modifier.fillMaxSize().padding(3.dp)) {
         val p = Ui.hold
         if (p > 0f) {
             val stroke = 6.dp.toPx()
             val topLeft = Offset(stroke / 2, stroke / 2)
             val sz = Size(size.width - stroke, size.height - stroke)
-            val q = p.coerceIn(0.02f, 1f)
-            rotate(degrees = -90f, pivot = center) {
-                drawArc(
-                    brush = Brush.sweepGradient(
-                        0f to Color(0x14FFFFFF),
-                        q to Color.White,
-                        1f to Color.White,
-                        center = center
-                    ),
-                    startAngle = 0f,
-                    sweepAngle = q * 360f,
-                    useCenter = false,
-                    topLeft = topLeft,
-                    size = sz,
-                    style = Stroke(stroke, cap = StrokeCap.Round)
-                )
-            }
+            drawArc(
+                color, -90f, p.coerceAtMost(1f) * 360f, false, topLeft, sz,
+                style = Stroke(stroke, cap = StrokeCap.Round)
+            )
         }
     }
 }
@@ -232,34 +219,38 @@ fun RoundButton(
     ) { Text(label, fontSize = fs, color = fg) }
 }
 
-/** Bouton à maintenir holdMs millisecondes ; la progression s'affiche via Ui.hold (HoldRing). */
+/** Appui long de holdMs ms : la progression s'affiche via Ui.hold (HoldRing). Annulé si on relâche avant. */
+@Composable
+fun Modifier.holdToConfirm(holdMs: Long, onDone: () -> Unit): Modifier {
+    val done by rememberUpdatedState(onDone)
+    return this.pointerInput(Unit) {
+        detectTapGestures(onPress = {
+            coroutineScope {
+                val job = launch {
+                    val t0 = SystemClock.uptimeMillis()
+                    while (true) {
+                        delay(16)
+                        val p = (SystemClock.uptimeMillis() - t0).toFloat() / holdMs
+                        Ui.hold = p.coerceAtMost(1f)
+                        if (p >= 1f) {
+                            done()
+                            Ui.hold = 0f
+                            break
+                        }
+                    }
+                }
+                tryAwaitRelease()
+                job.cancel()
+                Ui.hold = 0f
+            }
+        })
+    }
+}
+
 @Composable
 fun HoldButton(label: String, dim: Dp, bg: Color, fg: Color, fs: TextUnit, holdMs: Long, onDone: () -> Unit) {
-    val done by rememberUpdatedState(onDone)
     Box(
-        Modifier.size(dim).clip(CircleShape).background(bg)
-            .pointerInput(Unit) {
-                detectTapGestures(onPress = {
-                    coroutineScope {
-                        val job = launch {
-                            val t0 = SystemClock.uptimeMillis()
-                            while (true) {
-                                delay(16)
-                                val p = (SystemClock.uptimeMillis() - t0).toFloat() / holdMs
-                                Ui.hold = p.coerceAtMost(1f)
-                                if (p >= 1f) {
-                                    done()
-                                    Ui.hold = 0f
-                                    break
-                                }
-                            }
-                        }
-                        tryAwaitRelease()
-                        job.cancel()
-                        Ui.hold = 0f
-                    }
-                })
-            },
+        Modifier.size(dim).clip(CircleShape).background(bg).holdToConfirm(holdMs, onDone),
         contentAlignment = Alignment.Center
     ) { Text(label, fontSize = fs, color = fg) }
 }
@@ -299,6 +290,8 @@ fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, accent: Color, 
     }
 }
 
+private fun snap(f: Float): Float = if (f < 0.03f) 0f else if (f > 0.97f) 1f else f
+
 /** Curseur horizontal : fraction 0..1, onChange pendant le glissement, onFinish au relâchement. */
 @Composable
 fun SliderRow(
@@ -324,7 +317,7 @@ fun SliderRow(
                 .pointerInput(enabled) {
                     if (enabled) {
                         detectTapGestures { off ->
-                            onChange((off.x / size.width).coerceIn(0f, 1f))
+                            onChange(snap((off.x / size.width).coerceIn(0f, 1f)))
                             onFinish()
                         }
                     }
@@ -333,12 +326,15 @@ fun SliderRow(
                     if (enabled) {
                         detectHorizontalDragGestures(onDragEnd = { onFinish() }) { change, _ ->
                             change.consume()
-                            onChange((change.position.x / size.width).coerceIn(0f, 1f))
+                            onChange(snap((change.position.x / size.width).coerceIn(0f, 1f)))
                         }
                     }
                 }
         ) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceIn(0.03f, 1f)).background(fill))
+            // Rien du tout à 0 : plus de bande résiduelle
+            if (fraction > 0.001f) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceAtMost(1f)).background(fill))
+            }
         }
     }
 }

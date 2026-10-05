@@ -25,8 +25,11 @@ object Settings {
         private set
     var rgb by mutableIntStateOf(0x34D399)
         private set
-    /** Luminosité du mode éco : jamais sauvegardée, revient à 30 % à chaque activation / relance. */
-    var ecoBrightness by mutableIntStateOf(30)
+    /** Luminosité du mode éco : jamais sauvegardée, revient à 0 % à chaque activation / relance. */
+    var ecoBrightness by mutableIntStateOf(0)
+        private set
+    /** Part de l'écran (0..100 %) occupée par le haut (temps + boutons) ; le bas contient les tours. */
+    var topPct by mutableIntStateOf(60)
         private set
 
     private var loaded = false
@@ -45,14 +48,15 @@ object Settings {
         secMode = s.getBoolean("sec", false)
         textLevel = s.getInt("textLevel", 5)
         rgb = s.getInt("rgb", 0x34D399)
-        ecoBrightness = 30
+        topPct = s.getInt("topPct", 60)
+        ecoBrightness = 0
     }
 
     fun setRing(c: Context, v: Boolean) { ring = v; p(c).edit().putBoolean("ring", v).apply() }
     fun setAod(c: Context, v: Boolean) { aod = v; p(c).edit().putBoolean("aod", v).apply() }
     fun setEco(c: Context, v: Boolean) {
         eco = v
-        if (v) ecoBrightness = 30
+        if (v) ecoBrightness = 0
         p(c).edit().putBoolean("eco", v).apply()
     }
     fun setLock(c: Context, v: Boolean) { lock = v; p(c).edit().putBoolean("lock", v).apply() }
@@ -65,6 +69,8 @@ object Settings {
         textLevel = x
         p(c).edit().putInt("textLevel", x).apply()
     }
+    fun updateTopPct(v: Int) { topPct = v.coerceIn(0, 100) }
+    fun persistTopPct(c: Context) { p(c).edit().putInt("topPct", topPct).apply() }
     fun updateEcoBrightness(v: Int) { ecoBrightness = v.coerceIn(0, 100) }
 
     /** channel : 0 = R, 1 = G, 2 = B. Sauvegarde différée (persistRgb) pour ne pas écrire à chaque glissement. */
