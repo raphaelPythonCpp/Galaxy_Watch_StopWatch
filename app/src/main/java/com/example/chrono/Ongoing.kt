@@ -26,7 +26,11 @@ object Ongoing {
                 Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE
             )
+            val stopPi = PendingIntent.getBroadcast(
+                app, 1, Intent(app, StopResetReceiver::class.java), PendingIntent.FLAG_IMMUTABLE
+            )
             val nb = NotificationCompat.Builder(app, CH)
+                .addAction(R.drawable.ic_stopwatch, "Stop + Reset", stopPi)
                 .setSmallIcon(R.drawable.ic_stopwatch)
                 .setContentTitle("Chronomètre")
                 .setCategory(NotificationCompat.CATEGORY_STOPWATCH)

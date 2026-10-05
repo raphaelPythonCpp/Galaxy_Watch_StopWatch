@@ -13,6 +13,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,12 +23,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.ambient.AmbientLifecycleObserver
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.delay
 
@@ -35,11 +36,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Stopwatch.load(this)
+        Stopwatch.load(this)       // charge aussi les réglages ; détecte un « Forcer l'arrêt » précédent
         Settings.load(this)
         History.load(this)
         Ui.ambient = false
-        Ui.locked = false     // jamais verrouillé au (re)démarrage de l'appli
+        Ui.locked = false          // jamais verrouillé au (re)démarrage de l'appli
         Ui.hold = 0f
 
         // Permission de notification (pastille « chrono en cours » sur le cadran), demandée une seule fois
@@ -72,6 +73,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         lastWake = SystemClock.uptimeMillis()
+        checkAutoUnlock()
+        Stopwatch.enforceAutoStop(this)
     }
 
     override fun onStop() {
@@ -81,7 +84,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) lastWake = SystemClock.uptimeMillis()
+        if (hasFocus) {
+            lastWake = SystemClock.uptimeMillis()
+            checkAutoUnlock()
+        }
+    }
+
+    /** Filet de sécurité : levée du verrou tactile une fois le délai réglé écoulé (même écran éteint entre-temps). */
+    private fun checkAutoUnlock() {
+        val m = Settings.autoUnlockMin
+        if (Ui.locked && m > 0 && SystemClock.elapsedRealtime() - Ui.lockedAt >= m * 60_000L) {
+            Ui.locked = false
+        }
     }
 
     // Bouton physique du bas (Retour) : appui simple uniquement (l'appui long appartient à Samsung)
@@ -115,6 +129,7 @@ private class LapStats(val min: Long, val max: Long, val avg: Long)
 @Composable
 fun App() {
     val ctx = LocalContext.current
+    val hDp = LocalConfiguration.current.screenHeightDp.toFloat()   // diamètre vertical de la montre
     val now = remember { mutableLongStateOf(Stopwatch.elapsed()) }
     val running = Stopwatch.running
     val acc = Stopwatch.accumulated
@@ -131,6 +146,7 @@ fun App() {
             val step = if (ambient || eco) 1000L else 100L
             while (true) {
                 withFrameMillis { now.longValue = Stopwatch.elapsed() }
+                Stopwatch.enforceAutoStop(ctx)
                 delay(step - Stopwatch.elapsed() % step)
             }
         }
@@ -143,6 +159,18 @@ fun App() {
         if (running && !wasRunning && Settings.lock) Ui.locked = true
         if (!running) Ui.locked = false
         wasRunning = running
+    }
+
+    // Déverrouillage automatique après N minutes (0 = jamais)
+    LaunchedEffect(Ui.locked, Settings.autoUnlockMin) {
+        if (Ui.locked) {
+            Ui.lockedAt = SystemClock.elapsedRealtime()
+            val m = Settings.autoUnlockMin
+            if (m > 0) {
+                delay(m * 60_000L)
+                Ui.locked = false
+            }
+        }
     }
 
     // Luminosité du mode éco
@@ -172,6 +200,9 @@ fun App() {
     val topF = Settings.topPct / 100f
     val showTop = topF > 0.04f
     val showBottom = topF < 0.96f
+    val gapBtnLap = (Settings.gapBtnLapPct / 100f * hDp).dp
+    val lineGap = (Settings.lineGapPct / 100f * hDp).dp
+    val widthFrac = Settings.lapWidthPct / 100f
 
     MaterialTheme {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -185,26 +216,30 @@ fun App() {
                         Ring { (((now.longValue - lastTotal).coerceAtLeast(0L)) % ringRef).toFloat() / ringRef }
                     }
                     Column(Modifier.fillMaxSize()) {
-                        // Partie du haut : temps + boutons (centrée, rognée à sa zone si elle déborde)
+                        // Haut : temps + cercles, collés au bas de leur zone (la frontière = « Haut de l'écran »)
                         if (showTop) {
                             Box(
                                 Modifier.fillMaxWidth().weight(topF).clipToBounds(),
-                                contentAlignment = Alignment.Center
+                                contentAlignment = Alignment.BottomCenter
                             ) {
-                                Box(Modifier.wrapContentSize(Alignment.Center, unbounded = true)) {
-                                    Header(now, running, eco, pal, laps.isNotEmpty())
+                                Box(Modifier.wrapContentSize(Alignment.BottomCenter, unbounded = true)) {
+                                    Header(now, running, eco, pal, laps.isNotEmpty(), hDp)
                                 }
                             }
                         }
-                        if (showTop && showBottom && Settings.gapBtnLap > 0) {
-                            Spacer(Modifier.height(Settings.gapBtnLap.dp))
+                        if (showTop && showBottom && gapBtnLap > 0.dp) {
+                            Spacer(Modifier.height(gapBtnLap))
                         }
-                        // Partie du bas : moyenne + tours
+                        // Bas : liste simple, démarre tout en haut de sa zone (pas de centrage, pas de fondu forcé)
                         if (showBottom) {
-                            Box(Modifier.fillMaxWidth().weight(1f - topF)) {
-                                ScalingLazyColumn(
+                            Box(
+                                Modifier.fillMaxWidth().weight(1f - topF)
+                                    .then(if (Settings.fade) Modifier.edgeFade() else Modifier)
+                            ) {
+                                LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(lineGap)
                                 ) {
                                     if (laps.size >= 2) {
                                         item {
@@ -212,7 +247,7 @@ fun App() {
                                                 "Moy. " + fmtFull(stats.avg),
                                                 fontSize = Settings.textSp.sp,
                                                 color = lapColor(stats.avg, stats.min, stats.max, eco, pal),
-                                                style = Tnum
+                                                style = tight(Settings.textSp)
                                             )
                                         }
                                     }
@@ -221,7 +256,7 @@ fun App() {
                                             lap, laps.getOrNull(i + 1)?.lapTime,
                                             lapColor(lap.lapTime, stats.min, stats.max, eco, pal),
                                             lapMarker(lap.lapTime, stats.min, stats.max, laps.size),
-                                            Settings.textSp
+                                            Settings.textSp, widthFrac
                                         )
                                     }
                                 }
@@ -264,19 +299,18 @@ fun App() {
                     }
                 }
             }
-            // Progression des appuis longs (Reset, effacement de l'historique, cadenas) : arc plein, couleur de référence
+            // Progression des appuis longs (Reset, effacement de l'historique, cadenas, mise en page par défaut)
             HoldRing(holdColor)
         }
     }
 }
 
 @Composable
-fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, hasLaps: Boolean) {
+fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, hasLaps: Boolean, hDp: Float) {
     val ctx = LocalContext.current
     val undoOn = Settings.undoBtn
     // Diamètre réglé par le curseur « Cercles » ; réduit de 17 % quand le 3e cercle (Annuler) est présent
     val bs = (Settings.btnDp * (if (undoOn) 0.83f else 1f)).dp
-    val gap = (bs.value * 0.17f).dp
     val fs = (bs.value * 0.205f).sp
     val startBg = if (eco) Color.White else pal.accent
     val startFg = if (eco) Color.Black else pal.onAccent
@@ -305,8 +339,8 @@ fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, 
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         TimeText(now, eco)
-        Spacer(Modifier.height(Settings.gapTimeBtn.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+        Spacer(Modifier.height((Settings.gapTimeBtnPct / 100f * hDp).dp))
+        Row(horizontalArrangement = Arrangement.spacedBy((Settings.btnGapPct / 100f * hDp).dp)) {
             for (b in shown) b()
         }
     }

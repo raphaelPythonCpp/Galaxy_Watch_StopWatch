@@ -26,6 +26,9 @@
             </intent-filter>
         </activity>
 
+        <receiver android:name=".StopResetReceiver" android:exported="false" />
+        <receiver android:name=".AutoStopReceiver" android:exported="false" />
+
         <service
             android:name=".StopwatchTileService"
             android:exported="true"
