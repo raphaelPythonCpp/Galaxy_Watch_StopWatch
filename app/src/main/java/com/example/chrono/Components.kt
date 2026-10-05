@@ -109,16 +109,18 @@ fun HoldRing(color: Color) {
 @Composable
 fun TimeText(now: MutableLongState, eco: Boolean) {
     val ms = now.longValue
+    val base = Settings.chronoSp.toFloat()
+    val big = if (!Settings.secMode && ms >= 3_600_000L) base * 0.79f else base
     Row(verticalAlignment = Alignment.Bottom) {
         Text(
             fmtMain(ms),
-            fontSize = if (!Settings.secMode && ms >= 3_600_000L) 30.sp else 38.sp,
+            fontSize = big.sp,
             fontWeight = FontWeight.Medium, color = Color.White, style = Tnum
         )
         if (!eco) {
             Text(
-                fmtTenth(ms), fontSize = 18.sp, color = Dim, style = Tnum,
-                modifier = Modifier.padding(bottom = 5.dp)
+                fmtTenth(ms), fontSize = (big * 0.47f).sp, color = Dim, style = Tnum,
+                modifier = Modifier.padding(bottom = (big * 0.13f).dp)
             )
         }
     }

@@ -24,6 +24,9 @@ import kotlin.math.roundToInt
 private fun fmtDate(ts: Long): String =
     SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(ts))
 
+private fun mapF(f: Float, min: Int, max: Int): Int = (min + f * (max - min)).roundToInt()
+private fun fracOf(v: Int, min: Int, max: Int): Float = (v - min).toFloat() / (max - min)
+
 @Composable
 fun SettingsScreen() {
     val ctx = LocalContext.current
@@ -34,6 +37,7 @@ fun SettingsScreen() {
     val r = (Settings.rgb shr 16) and 0xFF
     val g = (Settings.rgb shr 8) and 0xFF
     val b = Settings.rgb and 0xFF
+    val fin = { Settings.persistLayout(ctx) }
 
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text("Réglages", fontSize = 14.sp, color = Dim) }
@@ -62,18 +66,50 @@ fun SettingsScreen() {
         item { ToggleRow("Mode gaucher", Settings.lefty, true, accent) { Settings.setLefty(ctx, it) } }
         item { ToggleRow("Bouton annuler tour", Settings.undoBtn, true, accent) { Settings.setUndoBtn(ctx, it) } }
         item { ToggleRow("Temps en secondes", Settings.secMode, true, accent) { Settings.setSecMode(ctx, it) } }
+
+        item { Text("Tailles", fontSize = 13.sp, color = Dim) }
         item {
-            SliderRow(
-                "Haut de l'écran", "${Settings.topPct}%", Settings.topPct / 100f, accent,
-                onFinish = { Settings.persistTopPct(ctx) }
-            ) { f -> Settings.updateTopPct((f * 100).roundToInt()) }
+            SliderRow("Chrono", "${Settings.chronoSp} sp", fracOf(Settings.chronoSp, 10, 90), accent, true, fin) { f ->
+                Settings.updateChronoSp(mapF(f, 10, 90))
+            }
         }
         item {
-            SliderRow(
-                "Taille du texte", "${Settings.textLevel}/10",
-                (Settings.textLevel - 1) / 9f, accent
-            ) { f -> Settings.setTextLevel(ctx, (f * 9).roundToInt() + 1) }
+            SliderRow("Cercles", "${Settings.btnDp} dp", fracOf(Settings.btnDp, 20, 140), accent, true, fin) { f ->
+                Settings.updateBtnDp(mapF(f, 20, 140))
+            }
         }
+        item {
+            SliderRow("Tours", "${Settings.lapSp} sp", fracOf(Settings.lapSp, 5, 40), accent, true, fin) { f ->
+                Settings.updateLapSp(mapF(f, 5, 40))
+            }
+        }
+
+        item { Text("Espacements", fontSize = 13.sp, color = Dim) }
+        item {
+            SliderRow("Chrono → cercles", "${Settings.gapTimeBtn} dp", fracOf(Settings.gapTimeBtn, 0, 100), accent, true, fin) { f ->
+                Settings.updateGapTimeBtn(mapF(f, 0, 100))
+            }
+        }
+        item {
+            SliderRow("Cercles → tours", "${Settings.gapBtnLap} dp", fracOf(Settings.gapBtnLap, 0, 100), accent, true, fin) { f ->
+                Settings.updateGapBtnLap(mapF(f, 0, 100))
+            }
+        }
+        item {
+            SliderRow("Haut de l'écran", "${Settings.topPct}%", Settings.topPct / 100f, accent, true, fin) { f ->
+                Settings.updateTopPct((f * 100).roundToInt())
+            }
+        }
+
+        item { Text("Appui long", fontSize = 13.sp, color = Dim) }
+        item {
+            SliderRow(
+                "Temps de maintien",
+                String.format(Locale.ROOT, "%.1f s", Settings.holdMs / 1000f),
+                fracOf(Settings.holdMs, 100, 10000), accent, true, fin
+            ) { f -> Settings.updateHoldMs(((100 + f * 9900) / 100f).roundToInt() * 100) }
+        }
+
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Couleur", fontSize = 13.sp, color = Dim)
@@ -127,9 +163,9 @@ fun HistoryScreen() {
                 Modifier.fillMaxWidth(0.92f).height(40.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(SurfaceBtn)
-                    .holdToConfirm(2000L) { History.clear(ctx) },
+                    .holdToConfirm(Settings.holdMs.toLong()) { History.clear(ctx) },
                 contentAlignment = Alignment.Center
-            ) { Text("Tout effacer (maintenir 2 s)", fontSize = 11.sp, color = Color.White) }
+            ) { Text("Tout effacer (maintenir)", fontSize = 11.sp, color = Color.White) }
         }
     }
 }
