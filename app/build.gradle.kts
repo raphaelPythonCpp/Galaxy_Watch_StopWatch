@@ -11,9 +11,9 @@ android {
         applicationId = "com.example.chrono"
         minSdk = 30
         targetSdk = 34
-        versionCode = 8
-        versionName = "2.6"
-        resourceConfigurations += listOf("fr", "en")
+        versionCode = 9
+        versionName = "2.7"
+        resourceConfigurations += listOf("fr", "en", "zh")
     }
 
     buildTypes {

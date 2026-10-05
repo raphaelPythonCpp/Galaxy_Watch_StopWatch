@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">秒表</string>
+    <string name="tile_description">秒表：开始、计圈、停止</string>
+</resources>

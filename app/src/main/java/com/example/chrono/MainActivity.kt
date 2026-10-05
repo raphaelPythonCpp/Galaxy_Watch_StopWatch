@@ -12,19 +12,25 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.ambient.AmbientLifecycleObserver
@@ -112,7 +118,12 @@ class MainActivity : ComponentActivity() {
 
     private fun handleButton() {
         if (Ui.screen != Screen.MAIN) {
-            Ui.screen = if (Ui.screen == Screen.SESSION) Screen.HISTORY else Screen.MAIN
+            // retour : sous-menu -> réglages, séance -> historique, le reste -> écran principal
+            Ui.screen = when (Ui.screen) {
+                Screen.SESSION -> Screen.HISTORY
+                Screen.RANGE -> Screen.SETTINGS
+                else -> Screen.MAIN
+            }
             return
         }
         val pm = getSystemService(PowerManager::class.java)
@@ -126,17 +137,27 @@ class MainActivity : ComponentActivity() {
 
 private class LapStats(val min: Long, val max: Long, val avg: Long)
 
+private val LightColors = Colors(
+    background = Color.White,
+    onBackground = Color.Black,
+    surface = Color(0xFFE6E6E6),
+    onSurface = Color.Black,
+    onSurfaceVariant = Color(0xFF444444)
+)
+
 @Composable
 fun App() {
     val ctx = LocalContext.current
-    val hDp = LocalConfiguration.current.screenHeightDp.toFloat()   // diamètre vertical de la montre
+    val cfg = LocalConfiguration.current
+    val hDp = cfg.screenHeightDp.toFloat()                  // diamètre vertical de la montre
+    val availW = (cfg.screenWidthDp * Settings.lapWidthPct / 100f).dp
     val now = remember { mutableLongStateOf(Stopwatch.elapsed()) }
     val running = Stopwatch.running
     val acc = Stopwatch.accumulated
     val ambient = Ui.ambient
     val eco = Settings.eco
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
-    val holdColor = if (eco) Color.White else pal.accent
+    val holdColor = if (eco) Fg else pal.accent
 
     // Mise à jour : 0,1 s (normal) ou 1 s (éco / ambiant), calée sur le changement de chiffre.
     // withFrameMillis ne reprend que si l'écran est visible : aucun réveil quand l'écran est éteint.
@@ -153,7 +174,6 @@ fun App() {
     }
 
     // Verrou tactile : s'enclenche seulement quand on DÉMARRE le chrono pendant cette session de l'appli
-    // (jamais restauré après une fermeture ou un arrêt forcé), et se lève quand le chrono s'arrête.
     var wasRunning by remember { mutableStateOf(running) }
     LaunchedEffect(running) {
         if (running && !wasRunning && Settings.lock) Ui.locked = true
@@ -194,6 +214,7 @@ fun App() {
             if (laps.isEmpty()) 0L else laps.sumOf { it.lapTime } / laps.size
         )
     }
+    val cols = rememberLapCols(laps, true, Settings.textSp)
     // Bague : 1 tour = 1' au départ, puis = meilleur tour (sans limite basse, seulement >= 1 ms)
     val ringRef = if (laps.isEmpty()) 60_000L else stats.min.coerceAtLeast(1L)
     val idle = !running && acc == 0L
@@ -202,20 +223,49 @@ fun App() {
     val showBottom = topF < 0.96f
     val gapBtnLap = (Settings.gapBtnLapPct / 100f * hDp).dp
     val lineGap = (Settings.lineGapPct / 100f * hDp).dp
-    val widthFrac = Settings.lapWidthPct / 100f
 
-    MaterialTheme {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // Défilement de la liste des tours : bague rotative native (tactile Samsung) + secours au doigt
+    val listState = rememberLazyListState()
+    val focus = remember { FocusRequester() }
+    val lineStepPx = with(LocalDensity.current) { (Settings.textSp * 0.8f).sp.toPx() + lineGap.toPx() }
+    LaunchedEffect(Ui.screen, ambient) {
+        try { focus.requestFocus() } catch (e: Exception) { }
+    }
+
+    MaterialTheme(colors = if (Settings.light) LightColors else Colors()) {
+        Box(
+            Modifier.fillMaxSize().background(Bg)
+                .circularScroll(
+                    enabled = {
+                        Ui.screen == Screen.MAIN && !Ui.ambient && Settings.touchRing &&
+                            (!Ui.locked || Settings.ringInLock)
+                    },
+                    onLines = { n -> listState.dispatchRawDelta(n * lineStepPx) }
+                )
+        ) {
             when {
                 ambient -> AmbientScreen(now)
                 Ui.screen == Screen.SETTINGS -> SettingsScreen()
+                Ui.screen == Screen.RANGE -> RangeScreen()
                 Ui.screen == Screen.HISTORY -> HistoryScreen()
                 Ui.screen == Screen.SESSION -> SessionScreen()
                 else -> {
                     if (Settings.ringActive) {
-                        Ring { (((now.longValue - lastTotal).coerceAtLeast(0L)) % ringRef).toFloat() / ringRef }
+                        Ring(Settings.snakePct / 100f) {
+                            (((now.longValue - lastTotal).coerceAtLeast(0L)) % ringRef).toFloat() / ringRef
+                        }
                     }
-                    Column(Modifier.fillMaxSize()) {
+                    Column(
+                        Modifier.fillMaxSize()
+                            .onRotaryScrollEvent { e ->
+                                if (!Ui.locked || Settings.ringInLock) {
+                                    listState.dispatchRawDelta(e.verticalScrollPixels)
+                                    true
+                                } else false
+                            }
+                            .focusRequester(focus)
+                            .focusable()
+                    ) {
                         // Haut : temps + cercles, collés au bas de leur zone (la frontière = « Haut de l'écran »)
                         if (showTop) {
                             Box(
@@ -230,33 +280,35 @@ fun App() {
                         if (showTop && showBottom && gapBtnLap > 0.dp) {
                             Spacer(Modifier.height(gapBtnLap))
                         }
-                        // Bas : liste simple, démarre tout en haut de sa zone (pas de centrage, pas de fondu forcé)
+                        // Bas : liste simple, démarre en haut de sa zone ; marge de fin = n'importe quel tour peut monter tout en haut
                         if (showBottom) {
                             Box(
                                 Modifier.fillMaxWidth().weight(1f - topF)
                                     .then(if (Settings.fade) Modifier.edgeFade() else Modifier)
                             ) {
                                 LazyColumn(
+                                    state = listState,
                                     modifier = Modifier.fillMaxSize(),
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(lineGap)
+                                    verticalArrangement = Arrangement.spacedBy(lineGap),
+                                    contentPadding = PaddingValues(bottom = ((1f - topF) * hDp).dp)
                                 ) {
                                     if (laps.size >= 2) {
-                                        item {
+                                        item(key = "avg") {
                                             Text(
-                                                "Moy. " + fmtFull(stats.avg),
+                                                S.AVG.t() + " " + fmtFull(stats.avg),
                                                 fontSize = Settings.textSp.sp,
                                                 color = lapColor(stats.avg, stats.min, stats.max, eco, pal),
                                                 style = tight(Settings.textSp)
                                             )
                                         }
                                     }
-                                    itemsIndexed(laps) { i, lap ->
+                                    itemsIndexed(laps, key = { _, lap -> lap.index }) { i, lap ->
                                         LapRow(
                                             lap, laps.getOrNull(i + 1)?.lapTime,
                                             lapColor(lap.lapTime, stats.min, stats.max, eco, pal),
                                             lapMarker(lap.lapTime, stats.min, stats.max, laps.size),
-                                            Settings.textSp, widthFrac
+                                            Settings.textSp, cols, availW
                                         )
                                     }
                                 }
@@ -289,17 +341,14 @@ fun App() {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                             Box(
                                 Modifier.padding(top = 8.dp).size(44.dp).clip(CircleShape)
-                                    .holdToConfirm(Settings.holdMs.toLong()) {
-                                        Ui.locked = false
-                                        Stopwatch.buzz(ctx, true)
-                                    },
+                                    .holdToConfirm { Ui.locked = false },
                                 contentAlignment = Alignment.Center
                             ) { LockIcon() }
                         }
                     }
                 }
             }
-            // Progression des appuis longs (Reset, effacement de l'historique, cadenas, mise en page par défaut)
+            // Progression des appuis longs (Reset, effacement, cadenas, sous-menus, mise en page par défaut)
             HoldRing(holdColor)
         }
     }
@@ -312,26 +361,26 @@ fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, 
     // Diamètre réglé par le curseur « Cercles » ; réduit de 17 % quand le 3e cercle (Annuler) est présent
     val bs = (Settings.btnDp * (if (undoOn) 0.83f else 1f)).dp
     val fs = (bs.value * 0.205f).sp
-    val startBg = if (eco) Color.White else pal.accent
-    val startFg = if (eco) Color.Black else pal.onAccent
+    val startBg = if (eco) Fg else pal.accent
+    val startFg = if (eco) Bg else pal.onAccent
     val stopBg = if (eco) OffTrack else pal.inverseDark
 
     val undo: @Composable () -> Unit = {
-        RoundButton("Annuler", bs, SurfaceBtn, Color.White, (bs.value * 0.19f).sp, hasLaps) { Stopwatch.undoLap(ctx) }
+        RoundButton(S.UNDO.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp, hasLaps) { Stopwatch.undoLap(ctx) }
     }
     val left: @Composable () -> Unit = {
         if (running) {
-            RoundButton("Tour", bs, SurfaceBtn, Color.White, fs) { Stopwatch.lap(ctx) }
+            RoundButton(S.LAP.t(), bs, SurfaceBtn, Fg, fs) { Stopwatch.lap(ctx) }
         } else {
-            // Reset protégé : maintenir (temps réglable), snake = progression
-            HoldButton("Reset", bs, SurfaceBtn, Color.White, fs, Settings.holdMs.toLong()) { Stopwatch.reset(ctx) }
+            // Reset protégé : maintenir (temps réglable) ; la vibration est déjà donnée par l'appui long
+            HoldButton(S.RESET.t(), bs, SurfaceBtn, Fg, fs) { Stopwatch.reset(ctx, false) }
         }
     }
     val right: @Composable () -> Unit = {
         if (running) {
-            RoundButton("Stop", bs, stopBg, Color.White, fs) { Stopwatch.toggle(ctx) }
+            RoundButton(S.STOP.t(), bs, stopBg, Color.White, fs) { Stopwatch.toggle(ctx) }
         } else {
-            RoundButton("Start", bs, startBg, startFg, fs) { Stopwatch.toggle(ctx) }
+            RoundButton(S.START.t(), bs, startBg, startFg, fs) { Stopwatch.toggle(ctx) }
         }
     }
     val order = if (undoOn) listOf(undo, left, right) else listOf(left, right)

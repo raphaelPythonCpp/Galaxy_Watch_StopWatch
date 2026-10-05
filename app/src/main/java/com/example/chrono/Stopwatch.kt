@@ -20,6 +20,7 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
+import kotlin.math.roundToInt
 
 data class Lap(val index: Int, val lapTime: Long, val total: Long)
 
@@ -249,7 +250,7 @@ object Stopwatch {
     }
 
     /** Remise à zéro (chrono arrêté) : la séance est ajoutée à l'historique. */
-    fun reset(c: Context) = finishReset(c, true, now())
+    fun reset(c: Context, vibrate: Boolean = true) = finishReset(c, vibrate, now())
 
     /** Arrête puis remet à zéro, comme un Reset après un Stop. `at` = instant de l'arrêt. */
     fun stopAndReset(c: Context, at: Long = now(), silent: Boolean = false) {
@@ -282,9 +283,9 @@ object Stopwatch {
         try {
             Settings.load(c)
             val pct = Settings.vibePct
-            if (pct <= 0) return
+            if (pct <= 0.05f) return
             val v = c.getSystemService(Vibrator::class.java) ?: return
-            fun amp(base: Int) = (base * pct / 100).coerceIn(1, 255)
+            fun amp(base: Int) = (base * pct / 100f).roundToInt().coerceIn(1, 255)
             val effect = if (Settings.eco) {
                 VibrationEffect.createOneShot(if (strong) 80 else 40, amp(200))
             } else if (strong) {

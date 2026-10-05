@@ -19,7 +19,7 @@ object Ongoing {
             val app = c.applicationContext
             val nm = app.getSystemService(NotificationManager::class.java) ?: return
             nm.createNotificationChannel(
-                NotificationChannel(CH, "Chrono en cours", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CH, S.NOTIF_CHANNEL.t(), NotificationManager.IMPORTANCE_LOW)
             )
             val pi = PendingIntent.getActivity(
                 app, 0,
@@ -30,9 +30,9 @@ object Ongoing {
                 app, 1, Intent(app, StopResetReceiver::class.java), PendingIntent.FLAG_IMMUTABLE
             )
             val nb = NotificationCompat.Builder(app, CH)
-                .addAction(R.drawable.ic_stopwatch, "Stop + Reset", stopPi)
+                .addAction(R.drawable.ic_stopwatch, S.NOTIF_STOP_RESET.t(), stopPi)
                 .setSmallIcon(R.drawable.ic_stopwatch)
-                .setContentTitle("Chronomètre")
+                .setContentTitle(S.NOTIF_TITLE.t())
                 .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

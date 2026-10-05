@@ -31,7 +31,7 @@ fun makePalette(rgb: Int): Palette {
 fun Color.argbLong(): Long = toArgb().toLong() and 0xFFFFFFFFL
 
 fun lapColor(v: Long, vMin: Long, vMax: Long, eco: Boolean, pal: Palette): Color =
-    if (eco) Color.White
+    if (eco) Fg
     else pal.gradient(if (vMax > vMin) (v - vMin).toFloat() / (vMax - vMin) else 0f)
 
 /** 1 = meilleur (▲), -1 = pire (▼), 0 = aucun */

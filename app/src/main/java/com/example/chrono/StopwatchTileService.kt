@@ -112,10 +112,10 @@ class StopwatchTileService : TileService() {
         val row = LayoutElementBuilders.Row.Builder()
             .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
         if (running) {
-            row.addContent(button("left", "Tour", 0xFF2B2F36, 0xFFFFFFFF))
+            row.addContent(button("left", S.LAP.t(), 0xFF2B2F36, 0xFFFFFFFF))
             row.addContent(LayoutElementBuilders.Spacer.Builder().setWidth(dp(12f)).build())
         }
-        row.addContent(button("right", if (running) "Stop" else "Start", rightBg, rightFg))
+        row.addContent(button("right", if (running) S.STOP.t() else S.START.t(), rightBg, rightFg))
 
         val column = LayoutElementBuilders.Column.Builder()
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)

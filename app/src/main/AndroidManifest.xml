@@ -19,12 +19,45 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:enableOnBackInvokedCallback="false">
+            android:enableOnBackInvokedCallback="false" />
+
+        <!-- Un seul alias actif à la fois : le nom de l'icône suit la langue choisie dans l'appli -->
+        <activity-alias
+            android:name=".LaunchFr"
+            android:targetActivity=".MainActivity"
+            android:label="Chrono"
+            android:icon="@drawable/ic_launcher"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias
+            android:name=".LaunchEn"
+            android:targetActivity=".MainActivity"
+            android:label="Stopwatch"
+            android:icon="@drawable/ic_launcher"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LaunchZh"
+            android:targetActivity=".MainActivity"
+            android:label="秒表"
+            android:icon="@drawable/ic_launcher"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <receiver android:name=".StopResetReceiver" android:exported="false" />
         <receiver android:name=".AutoStopReceiver" android:exported="false" />
