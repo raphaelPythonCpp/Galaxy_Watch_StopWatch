@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +52,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
+import kotlin.math.roundToInt
+import com.google.zxing.common.BitMatrix
 
 // ---------------------------------------------------------------- thème (mode clair = 255 - rgb sur les gris)
 
@@ -66,12 +70,15 @@ val OffTrack: Color get() = g(Color(0xFF3A3F47))
 val RingTrack: Color get() = g(Color(0xFF0E1218))
 val Tnum = TextStyle(fontFeatureSettings = "tnum")
 
-enum class Screen { MAIN, SETTINGS, RANGE, HISTORY, SESSION }
+enum class Screen { MAIN, SETTINGS, RANGE, TRACK, HELP, HISTORY, SESSION, QR }
 
 object Ui {
     var screen by mutableStateOf(Screen.MAIN)
     var sessionIndex by mutableIntStateOf(0)
     var rangeKey by mutableStateOf("")
+    var rangeFrom by mutableStateOf(Screen.SETTINGS)
+    /** Avertissement en attente : -1 = aucun, 0 = mode clair, 1 = always-on display. */
+    var warn by mutableIntStateOf(-1)
     var ambient by mutableStateOf(false)
     var locked by mutableStateOf(false)
     var lockedAt = 0L
@@ -187,37 +194,67 @@ fun AmbientScreen(now: MutableLongState) {
 
 // ---------------------------------------------------------------- icônes
 
+/** Pastille ronde du haut de l'écran : appui simple (hold = false) ou appui long au temps de maintien (hold = true). */
 @Composable
-fun MenuButton(onClick: () -> Unit) {
+fun TopIcon(hold: Boolean, onAction: () -> Unit, content: @Composable () -> Unit) {
+    val m = Modifier.size(28.dp).clip(CircleShape).background(SurfaceBtn)
     Box(
-        Modifier.size(32.dp).clip(CircleShape).background(SurfaceBtn).clickable(onClick = onClick),
+        if (hold) m.holdToConfirm(onAction) else m.clickable(onClick = onAction),
         contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.size(14.dp)) {
-            val w = 1.8.dp.toPx()
-            for (i in 0..2) {
-                val y = size.height * (0.15f + 0.35f * i)
-                drawLine(Fg, Offset(0f, y), Offset(size.width, y), strokeWidth = w, cap = StrokeCap.Round)
-            }
+    ) { content() }
+}
+
+@Composable
+fun MenuGlyph() {
+    Canvas(Modifier.size(12.dp)) {
+        val w = 1.6.dp.toPx()
+        for (i in 0..2) {
+            val y = size.height * (0.15f + 0.35f * i)
+            drawLine(Fg, Offset(0f, y), Offset(size.width, y), strokeWidth = w, cap = StrokeCap.Round)
         }
     }
 }
 
-/** Icône d'historique : horloge. */
+/** Historique : horloge. */
 @Composable
-fun HistoryButton(onClick: () -> Unit) {
-    Box(
-        Modifier.size(32.dp).clip(CircleShape).background(SurfaceBtn).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.size(16.dp)) {
-            val w = 1.6.dp.toPx()
-            val c = center
-            val r = size.minDimension / 2 - w / 2
-            drawCircle(Fg, r, c, style = Stroke(w))
-            drawLine(Fg, c, Offset(c.x, c.y - r * 0.55f), w, StrokeCap.Round)
-            drawLine(Fg, c, Offset(c.x + r * 0.45f, c.y), w, StrokeCap.Round)
-        }
+fun HistoryGlyph() {
+    Canvas(Modifier.size(14.dp)) {
+        val w = 1.5.dp.toPx()
+        val c = center
+        val r = size.minDimension / 2 - w / 2
+        drawCircle(Fg, r, c, style = Stroke(w))
+        drawLine(Fg, c, Offset(c.x, c.y - r * 0.55f), w, StrokeCap.Round)
+        drawLine(Fg, c, Offset(c.x + r * 0.45f, c.y), w, StrokeCap.Round)
+    }
+}
+
+@Composable
+fun HelpGlyph() { Text("?", fontSize = 14.sp, color = Fg, fontWeight = FontWeight.Bold) }
+
+/** Suivi avancé : trois barres de tailles différentes. */
+@Composable
+fun TrackGlyph() {
+    Canvas(Modifier.size(13.dp)) {
+        val w = size.width / 5f
+        val h = size.height
+        drawRect(Fg, Offset(0f, h * 0.55f), Size(w, h * 0.45f))
+        drawRect(Fg, Offset(w * 2f, h * 0.2f), Size(w, h * 0.8f))
+        drawRect(Fg, Offset(w * 4f, h * 0.4f), Size(w, h * 0.6f))
+    }
+}
+
+/** Code QR stylisé : trois repères. */
+@Composable
+fun QrGlyph(color: Color) {
+    Canvas(Modifier.size(16.dp)) {
+        val u = size.width / 7f
+        val s3 = Size(u * 3f, u * 3f)
+        val st = Stroke(u * 0.8f)
+        drawRect(color, Offset(u * 0.4f, u * 0.4f), Size(u * 2.2f, u * 2.2f), style = st)
+        drawRect(color, Offset(u * 4.4f, u * 0.4f), Size(u * 2.2f, u * 2.2f), style = st)
+        drawRect(color, Offset(u * 0.4f, u * 4.4f), Size(u * 2.2f, u * 2.2f), style = st)
+        drawRect(color, Offset(u * 4.6f, u * 4.6f), Size(u * 1.1f, u * 1.1f))
+        drawRect(color, Offset(u * 3.2f, u * 3.2f), Size(u * 0.9f, u * 0.9f))
     }
 }
 
@@ -318,12 +355,14 @@ fun HoldButton(label: String, dim: Dp, bg: Color, fg: Color, fs: TextUnit, onDon
 // ---------------------------------------------------------------- bague tactile de secours
 
 /**
- * Défilement circulaire au doigt dans la bande extérieure de l'écran : ~15° = 1 ligne.
- * Un simple appui n'est jamais intercepté ; seul un mouvement circulaire (> 8°) l'est.
+ * Bande extérieure de l'écran : un mouvement circulaire (> 8°) y est toujours capté (il ne fait pas défiler la liste
+ * au doigt, pour éviter un doublon avec la bague tactile du système). Si scrollEnabled : ~15° = 1 ligne.
+ * Un simple appui n'est jamais intercepté.
  */
 @Composable
-fun Modifier.circularScroll(enabled: () -> Boolean, onLines: (Int) -> Unit): Modifier {
-    val en by rememberUpdatedState(enabled)
+fun Modifier.circularScroll(active: () -> Boolean, scrollEnabled: () -> Boolean, onLines: (Int) -> Unit): Modifier {
+    val act by rememberUpdatedState(active)
+    val sc by rememberUpdatedState(scrollEnabled)
     val cb by rememberUpdatedState(onLines)
     return this.pointerInput(Unit) {
         awaitEachGesture {
@@ -332,10 +371,11 @@ fun Modifier.circularScroll(enabled: () -> Boolean, onLines: (Int) -> Unit): Mod
             val cy = size.height / 2f
             val r = minOf(cx, cy)
             val d0 = hypot(down.position.x - cx, down.position.y - cy)
-            if (!en() || d0 < r * 0.78f) return@awaitEachGesture
+            if (!act() || d0 < r * 0.78f) return@awaitEachGesture
             var last = atan2(down.position.y - cy, down.position.x - cx)
+            var accTotal = 0f
             var acc = 0f
-            var active = false
+            var captured = false
             while (true) {
                 val ev = awaitPointerEvent(PointerEventPass.Initial)
                 val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
@@ -345,14 +385,17 @@ fun Modifier.circularScroll(enabled: () -> Boolean, onLines: (Int) -> Unit): Mod
                 if (da > 180f) da -= 360f
                 if (da < -180f) da += 360f
                 last = a
+                accTotal += da
                 acc += da
-                if (!active && abs(acc) > 8f) active = true
-                if (active) {
+                if (!captured && abs(accTotal) > 8f) captured = true
+                if (captured) {
                     ev.changes.forEach { it.consume() }
-                    val lines = (acc / 15f).toInt()
-                    if (lines != 0) {
-                        cb(lines)
-                        acc -= lines * 15f
+                    if (sc()) {
+                        val lines = (acc / 15f).toInt()
+                        if (lines != 0) {
+                            cb(lines)
+                            acc -= lines * 15f
+                        }
                     }
                 }
             }
@@ -393,21 +436,6 @@ fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, accent: Color, 
         Text(label, fontSize = 13.sp, color = Fg, modifier = Modifier.weight(1f))
         Pill(checked, accent)
     }
-}
-
-/** Case à bascule en demi-ligne (deux ou trois par ligne). */
-@Composable
-fun HalfToggle(
-    label: String, checked: Boolean, accent: Color, onAccent: Color, modifier: Modifier,
-    fontSp: Float = 12f, onChange: (Boolean) -> Unit
-) {
-    Box(
-        modifier.clip(RoundedCornerShape(16.dp))
-            .background(if (checked) accent else RowBg)
-            .clickable { onChange(!checked) }
-            .padding(vertical = 9.dp),
-        contentAlignment = Alignment.Center
-    ) { Text(label, fontSize = fontSp.sp, color = if (checked) onAccent else Dim) }
 }
 
 private fun snap(f: Float): Float = if (f < 0.03f) 0f else if (f > 0.97f) 1f else f
@@ -475,20 +503,30 @@ fun SliderRow(
         fill = accent,
         enabled = enabled,
         onFinish = { Settings.persistSliders(ctx); onRelease() },
-        onLong = { Ui.rangeKey = spec.key; Ui.screen = Screen.RANGE },
+        onLong = if (spec.choices == null) {
+            { Ui.rangeFrom = Ui.screen; Ui.rangeKey = spec.key; Ui.screen = Screen.RANGE }
+        } else null,
         onChange = { f -> spec.setFromFraction(f) }
     )
 }
 
 // ---------------------------------------------------------------- tours
 
+/** Allure d'un tour : « 3'32/km » (rien de plus). */
+fun fmtPace(lapMs: Long, distM: Float): String {
+    if (distM <= 0f) return ""
+    val sec = (lapMs / 1000.0 / (distM / 1000.0)).roundToInt()
+    return "${sec / 60}'${"%02d".format(sec % 60)}/km"
+}
+
 /** Largeurs des colonnes, mesurées sur les valeurs réelles : chaque colonne ne prend que la place nécessaire. */
-class LapCols(val num: Dp, val total: Dp, val lap: Dp, val delta: Dp) {
+class LapCols(val num: Dp, val total: Dp, val lap: Dp, val pace: Dp, val delta: Dp) {
     fun sum(): Dp {
         var s = 0.dp
         if (Settings.colNum) s += num
         if (Settings.colTotal) s += total
         if (Settings.colLap) s += lap
+        if (Settings.paceActive) s += pace
         if (Settings.colDelta) s += delta
         return s
     }
@@ -500,7 +538,8 @@ fun rememberLapCols(laps: List<Lap>, prevIsNext: Boolean, sz: Float): LapCols {
     val density = LocalDensity.current
     val lastKey = laps.firstOrNull()?.total ?: 0L
     val secMode = Settings.secMode
-    return remember(laps.size, lastKey, sz, secMode) {
+    val dist = Settings.distanceM
+    return remember(laps.size, lastKey, sz, secMode, dist) {
         val st = tight(sz).copy(fontSize = sz.sp)
         fun w(s: String): Dp = with(density) { measurer.measure(s, st).size.width.toDp() }
         val maxTotal = laps.maxOfOrNull { it.total } ?: 0L
@@ -518,13 +557,14 @@ fun rememberLapCols(laps: List<Lap>, prevIsNext: Boolean, sz: Float): LapCols {
             w(if (laps.size >= 100) "000" else "00"),
             w(fmtFull(maxTotal)),
             w(fmtFull(maxLap)) + (sz * 0.6f).dp + 2.dp,
+            if (dist > 0f) w(fmtPace(maxLap, dist)) else 0.dp,
             if (hasDelta) w("−" + (maxAbs / 1000) + "." + ((maxAbs / 100) % 10)) else 0.dp
         )
     }
 }
 
 /**
- * [n° tour] [temps total] [dt depuis le dernier tour] [écart de dt vs tour précédent].
+ * [n° tour] [temps total] [dt depuis le dernier tour] [allure] [écart de dt vs tour précédent].
  * Colonnes alignées, de largeur mesurée ; l'espace libre est réparti entre elles, aucun texte n'est rogné.
  */
 @Composable
@@ -561,9 +601,75 @@ fun LapRow(lap: Lap, prevLapTime: Long?, color: Color, marker: Int, sz: Float, c
                         softWrap = false, overflow = TextOverflow.Visible)
                 }
             }
+            if (Settings.paceActive) {
+                Text(fmtPace(lap.lapTime, Settings.distanceM), fontSize = fs, color = Soft, style = st, maxLines = 1,
+                    softWrap = false, overflow = TextOverflow.Visible, modifier = Modifier.width(cols.pace))
+            }
             if (Settings.colDelta) {
                 Text(delta, fontSize = fs, color = Dim, style = st, textAlign = TextAlign.End, maxLines = 1,
                     softWrap = false, overflow = TextOverflow.Visible, modifier = Modifier.width(cols.delta))
+            }
+        }
+    }
+}
+
+/** Case à bascule en demi-ligne (deux ou trois par ligne). */
+@Composable
+fun HalfToggle(
+    label: String, checked: Boolean, accent: Color, onAccent: Color, modifier: Modifier,
+    fontSp: Float = 12f, onChange: (Boolean) -> Unit
+) {
+    Box(
+        modifier.clip(RoundedCornerShape(16.dp))
+            .background(if (checked) accent else RowBg)
+            .clickable { onChange(!checked) }
+            .padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center
+    ) { Text(label, fontSize = fontSp.sp, color = if (checked) onAccent else Dim) }
+}
+
+/** Fenêtre d'avertissement : texte et symbole ⚠️ dans la couleur de référence. */
+@Composable
+fun WarnDialog(kind: Int, accent: Color, onOk: () -> Unit, onCancel: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Color(0xE6000000)).pointerInput(Unit) { detectTapGestures { } },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.fillMaxWidth(0.86f).clip(RoundedCornerShape(22.dp)).background(RowBg).padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("⚠️ " + S.WARN_TITLE.t(), fontSize = 14.sp, color = accent, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (kind == 0) S.WARN_LIGHT.t() else S.WARN_AOD.t(),
+                fontSize = 11.sp, color = accent, textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HalfToggle(S.WARN_CANCEL.t(), false, accent, Bg, Modifier.width(70.dp)) { onCancel() }
+                HalfToggle(S.WARN_OK.t(), true, accent, if (accent.luminance() > 0.5f) Color.Black else Color.White, Modifier.width(70.dp)) { onOk() }
+            }
+        }
+    }
+}
+
+/** Dessin d'un code QR : fond blanc, modules noirs (lignes fusionnées pour limiter les tracés). */
+@Composable
+fun QrCanvas(m: BitMatrix, side: Dp) {
+    Canvas(Modifier.size(side)) {
+        val n = m.width
+        val cell = size.width / n
+        drawRect(Color.White)
+        for (y in 0 until n) {
+            var x = 0
+            while (x < n) {
+                if (m.get(x, y)) {
+                    var x2 = x
+                    while (x2 < n && m.get(x2, y)) x2++
+                    drawRect(Color.Black, Offset(x * cell, y * cell), Size((x2 - x) * cell + 0.6f, cell + 0.6f))
+                    x = x2
+                } else x++
             }
         }
     }

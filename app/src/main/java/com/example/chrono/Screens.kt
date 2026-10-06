@@ -1,19 +1,29 @@
 package com.example.chrono
 
 import android.app.Activity
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed as lazyItemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -23,6 +33,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 private fun fmtDate(ts: Long): String =
     SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(ts))
@@ -34,6 +45,17 @@ private fun fmtMinutes(m: Int, zero: String): String = when {
 }
 
 @Composable
+fun LogoBox(i: Int, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    Image(
+        painter = painterResource(Logos.launcher[i]),
+        contentDescription = null,
+        modifier = Modifier.size(38.dp).clip(CircleShape)
+            .border(if (selected) 2.dp else 0.dp, if (selected) accent else Color.Transparent, CircleShape)
+            .clickable(onClick = onClick)
+    )
+}
+
+@Composable
 fun SettingsScreen() {
     val ctx = LocalContext.current
     val act = ctx as? Activity
@@ -41,10 +63,10 @@ fun SettingsScreen() {
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
     val accent = if (eco) Fg else pal.accent
     val onAcc = if (eco) Bg else pal.onAccent
-    // Au moins une colonne doit rester affichée
+    // Au moins une colonne doit rester affichée (Allure et Moyenne sont des plus)
     val colToggle: (Int, Boolean) -> Unit = { idx, v ->
         val count = listOf(Settings.colNum, Settings.colTotal, Settings.colLap, Settings.colDelta).count { it }
-        if (v || count > 1) Settings.setCol(ctx, idx, v)
+        if (idx == 4 || v || count > 1) Settings.setCol(ctx, idx, v)
     }
 
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -83,9 +105,9 @@ fun SettingsScreen() {
             }
         }
         item {
-            ToggleRow(S.AOD.t(), Settings.aodActive, !eco, accent) {
-                Settings.setAod(ctx, it)
-                act?.recreate()
+            ToggleRow(S.AOD.t(), Settings.aodActive, !eco, accent) { v ->
+                if (v) Ui.warn = 1                       // avertissement avant activation
+                else { Settings.setAod(ctx, false); act?.recreate() }
             }
         }
         item { ToggleRow(S.CUSTOM.t(), Settings.custom, true, accent) { Settings.setCustom(ctx, it) } }
@@ -106,14 +128,38 @@ fun SettingsScreen() {
                     }
                 }
             }
-            item { ToggleRow(S.LIGHT.t(), Settings.light, true, accent) { Settings.setLight(ctx, it) } }
+
+            item { Text(S.LOGO.t(), fontSize = 13.sp, color = Dim) }
+            for (row in 0 until 3) {
+                item {
+                    Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.SpaceBetween) {
+                        for (col in 0 until 4) {
+                            val i = row * 4 + col
+                            LogoBox(i, Settings.logo == i, accent) { Settings.setLogo(ctx, i) }
+                        }
+                    }
+                }
+            }
+
+            item {
+                ToggleRow(S.LIGHT.t(), Settings.light, true, accent) { v ->
+                    if (v) Ui.warn = 0                   // avertissement avant activation
+                    else Settings.setLight(ctx, false)
+                }
+            }
             item { SliderRow(Settings.snake, accent, !eco, " %") }
             item { ToggleRow(S.TOUCH_RING.t(), Settings.touchRing, true, accent) { Settings.setTouchRing(ctx, it) } }
+            item { SliderRow(Settings.ringEv, accent) }
+            item { ToggleRow(S.AUTO_SCROLL.t(), Settings.autoScroll, true, accent) { Settings.setAutoScroll(ctx, it) } }
+            item { ToggleRow(S.RUN_ICONS.t(), Settings.runIcons, true, accent) { Settings.setRunIcons(ctx, it) } }
+            item { ToggleRow(S.HELP_TOGGLE.t(), Settings.help, true, accent) { Settings.setHelp(ctx, it) } }
+            item { ToggleRow(S.TRACK.t(), Settings.track, true, accent) { Settings.setTrack(ctx, it) } }
             item { ToggleRow(S.LEFTY.t(), Settings.lefty, true, accent) { Settings.setLefty(ctx, it) } }
             item { ToggleRow(S.UNDO_BTN.t(), Settings.undoBtn, true, accent) { Settings.setUndoBtn(ctx, it) } }
             item { ToggleRow(S.SECONDS.t(), Settings.secMode, true, accent) { Settings.setSecMode(ctx, it) } }
             item { ToggleRow(S.FADE.t(), Settings.fade, true, accent) { Settings.setFade(ctx, it) } }
 
+            // Colonnes : 2 - 2 - 2 (la moyenne est le dernier choix)
             item { Text(S.COLS.t(), fontSize = 13.sp, color = Dim) }
             item {
                 Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -126,6 +172,33 @@ fun SettingsScreen() {
                     HalfToggle(S.COL_LAP.t(), Settings.colLap, accent, onAcc, Modifier.weight(1f)) { colToggle(2, it) }
                     HalfToggle(S.COL_DELTA.t(), Settings.colDelta, accent, onAcc, Modifier.weight(1f)) { colToggle(3, it) }
                 }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    HalfToggle(S.COL_PACE.t(), Settings.colPace, accent, onAcc, Modifier.weight(1f)) { colToggle(4, it) }
+                    HalfToggle(S.AVG.t(), Settings.showAvg, accent, onAcc, Modifier.weight(1f)) { Settings.setShowAvg(ctx, it) }
+                }
+            }
+
+            item { Text(S.QR_SECTION.t(), fontSize = 13.sp, color = Dim) }
+            item {
+                SliderRow(
+                    Settings.qrVer, accent,
+                    fmt = { v ->
+                        val ver = v.roundToInt()
+                        "v$ver · ≈" + qrLapsApprox(ver, Settings.qrLevel) + " " + S.QR_LAPS.t()
+                    }
+                )
+            }
+            item {
+                SliderRow(
+                    Settings.qrEc, accent,
+                    fmt = { v ->
+                        val l = v.roundToInt().coerceIn(0, 3)
+                        QR_LEVELS[l] + " (" + QR_RECOVERY[l] + ") · ≈" +
+                            qrLapsApprox(Settings.qrVersion, l) + " " + S.QR_LAPS.t()
+                    }
+                )
             }
 
             item { Text(S.SIZES.t(), fontSize = 13.sp, color = Dim) }
@@ -163,6 +236,14 @@ fun SettingsScreen() {
             item {
                 SliderRow(Settings.autoStop, accent,
                     fmt = { v -> fmtMinutes(v.roundToInt(), S.OFF.t()) })
+            }
+        }
+
+        // ---------------- À propos
+        item {
+            Column(Modifier.padding(top = 10.dp, bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Super StopWatch  v10", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
+                Text(S.ABOUT_BY.t(), fontSize = 9.sp, color = Dim, textAlign = TextAlign.Center)
             }
         }
     }
@@ -223,6 +304,44 @@ fun RangeScreen() {
     }
 }
 
+/** Suivi avancé : distance par tour (allure) + objectif d'exercice / repos. Accessible pendant l'activité. */
+@Composable
+fun TrackScreen() {
+    val ctx = LocalContext.current
+    val eco = Settings.eco
+    val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
+    val accent = if (eco) Fg else pal.accent
+    val resched: () -> Unit = { Segments.schedule(ctx) }
+
+    ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        item { Text(S.TRACK.t(), fontSize = 14.sp, color = Dim) }
+        item { SliderRow(Settings.precision, accent, unit = " m") }
+        item { SliderRow(Settings.distance, accent, unit = " m") }
+        item {
+            SliderRow(
+                Settings.exTime, accent,
+                fmt = { v -> if (v < 0.5f) S.OFF.t() else Settings.exTime.text(v) + " s" },
+                onRelease = resched
+            )
+        }
+        item { SliderRow(Settings.nbRep, accent, unit = " ×", onRelease = resched) }
+        item { SliderRow(Settings.restTime, accent, unit = " s", onRelease = resched) }
+    }
+}
+
+@Composable
+fun HelpScreen() {
+    ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        item { Text(S.HELP_TITLE.t(), fontSize = 14.sp, color = Dim) }
+        item {
+            Text(
+                S.HELP_TEXT.t(), fontSize = 11.sp, color = Fg,
+                modifier = Modifier.fillMaxWidth(0.88f)
+            )
+        }
+    }
+}
+
 @Composable
 fun HistoryScreen() {
     val ctx = LocalContext.current
@@ -232,19 +351,22 @@ fun HistoryScreen() {
             item { Text(S.NO_SESSION.t(), fontSize = 12.sp, color = Dim) }
         }
         itemsIndexed(History.sessions) { i, s ->
-            Chip(
-                onClick = { Ui.sessionIndex = i; Ui.screen = Screen.SESSION },
-                label = { Text(fmtDate(s.ts), fontSize = 12.sp) },
-                secondaryLabel = {
-                    Text(
-                        fmtFull(s.total) + " · " + s.laps.size + " " +
-                            (if (s.laps.size > 1) S.LAP_MANY.t() else S.LAP_ONE.t()),
-                        fontSize = 11.sp
-                    )
-                },
-                colors = ChipDefaults.secondaryChipColors(),
-                modifier = Modifier.fillMaxWidth(0.92f)
-            )
+            // Appui : ouvre la séance ; maintien : supprime cette séance (nom = date et heure automatiques)
+            Column(
+                Modifier.fillMaxWidth(0.92f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(SurfaceBtn)
+                    .clickable { Ui.sessionIndex = i; Ui.screen = Screen.SESSION }
+                    .holdToConfirm { History.delete(ctx, i) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Text(fmtDate(s.ts), fontSize = 12.sp, color = Fg)
+                Text(
+                    fmtFull(s.total) + " · " + s.laps.size + " " +
+                        (if (s.laps.size > 1) S.LAP_MANY.t() else S.LAP_ONE.t()),
+                    fontSize = 11.sp, color = Dim
+                )
+            }
         }
         item {
             // Même mécanique que le Reset : maintenir (temps réglable), snake de progression, vibration
@@ -260,7 +382,54 @@ fun HistoryScreen() {
 }
 
 @Composable
+private fun Stat(label: S, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label.t(), fontSize = 9.sp, color = Dim)
+        Text(value, fontSize = 12.sp, color = Fg, style = Tnum)
+    }
+}
+
+/** Statistiques minimalistes : meilleur, pire, moyenne, médiane, écart-type, régularité, barres. */
+@Composable
+private fun StatsBlock(laps: List<Long>, eco: Boolean, pal: Palette) {
+    if (laps.isEmpty()) return
+    val n = laps.size
+    val sorted = laps.sorted()
+    val mn = sorted.first()
+    val mx = sorted.last()
+    val avg = laps.sum() / n
+    val med = if (n % 2 == 1) sorted[n / 2] else (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+    var acc = 0.0
+    for (v in laps) { val d = (v - avg).toDouble(); acc += d * d }
+    val sd = sqrt(acc / n)
+    val reg = (100.0 * (1.0 - sd / avg.coerceAtLeast(1L))).coerceIn(0.0, 100.0).roundToInt()
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Stat(S.BEST, fmtFull(mn)); Stat(S.WORST, fmtFull(mx))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Stat(S.AVG, fmtFull(avg)); Stat(S.MEDIAN, fmtFull(med))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Stat(S.STDEV, "±" + fmtFull(sd.toLong())); Stat(S.REGULARITY, "$reg %")
+        }
+        Canvas(Modifier.fillMaxWidth(0.8f).height(26.dp)) {
+            val w = size.width / n
+            laps.forEachIndexed { i, v ->
+                val h = size.height * (v.toFloat() / mx.toFloat()).coerceIn(0.05f, 1f)
+                drawRect(
+                    lapColor(v, mn, mx, eco, pal),
+                    Offset(i * w, size.height - h),
+                    Size(maxOf(1f, w - (if (w > 4f) 1.5f else 0f)), h)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun SessionScreen() {
+    val ctx = LocalContext.current
     val s = History.sessions.getOrNull(Ui.sessionIndex)
     val eco = Settings.eco
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
@@ -288,6 +457,7 @@ fun SessionScreen() {
         } else {
             item { Text(fmtDate(s.ts), fontSize = 13.sp, color = Dim) }
             item { Text(fmtFull(s.total), fontSize = 20.sp, color = Fg, style = Tnum) }
+            item { StatsBlock(s.laps, eco, pal) }
             if (rows.isEmpty()) {
                 item { Text(S.NO_LAP.t(), fontSize = 12.sp, color = Dim) }
             }
@@ -298,6 +468,79 @@ fun SessionScreen() {
                     lapMarker(lap.lapTime, vMin, vMax, rows.size),
                     Settings.textSp, cols, availW
                 )
+            }
+            item {
+                // Bouton QR : génère les codes de cette séance (liste Python des temps de tour en secondes)
+                Box(
+                    Modifier.padding(top = 6.dp).size(40.dp).clip(CircleShape).background(SurfaceBtn)
+                        .clickable { Ui.screen = Screen.QR },
+                    contentAlignment = Alignment.Center
+                ) { QrGlyph(Fg) }
+            }
+            item {
+                Box(
+                    Modifier.fillMaxWidth(0.92f).height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(SurfaceBtn)
+                        .holdToConfirm {
+                            History.delete(ctx, Ui.sessionIndex)
+                            Ui.screen = Screen.HISTORY
+                        },
+                    contentAlignment = Alignment.Center
+                ) { Text(S.DELETE_ONE.t(), fontSize = 10.sp, color = Fg) }
+            }
+        }
+    }
+}
+
+/** Codes QR de la séance : fond blanc imposé, luminosité maximale, défilement gauche/droite entre les blocs. */
+@Composable
+fun QrScreen() {
+    val s = History.sessions.getOrNull(Ui.sessionIndex)
+    val ver = Settings.qrVersion
+    val ec = Settings.qrLevel
+    val cfg = LocalConfiguration.current
+    val side = (minOf(cfg.screenWidthDp, cfg.screenHeightDp) * 0.66f).dp
+    val items = remember(s) {
+        if (s == null) emptyList() else (if (s.laps.isEmpty()) listOf(s.total) else s.laps).map { lapSeconds(it) }
+    }
+    val blocks = remember(items, ver, ec) {
+        if (items.isEmpty()) emptyList() else qrBlocks(items, qrCapacity(ver, ec))
+    }
+    val mats = remember(blocks, ver, ec) { blocks.map { qrMatrix(it, ver, ec) } }
+
+    val act = LocalContext.current as? Activity
+    DisposableEffect(Unit) {
+        val w = act?.window
+        val old = w?.attributes?.screenBrightness ?: -1f
+        if (w != null) {
+            val lp = w.attributes
+            lp.screenBrightness = 1f
+            w.attributes = lp
+        }
+        onDispose {
+            if (w != null) {
+                val lp = w.attributes
+                lp.screenBrightness = old
+                w.attributes = lp
+            }
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.White), contentAlignment = Alignment.Center) {
+        if (mats.isEmpty()) {
+            Text("—", color = Color.Black)
+        } else {
+            val pager = rememberPagerState(pageCount = { mats.size })
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        val m = mats[page]
+                        if (m != null) QrCanvas(m, side) else Text("QR ✗", color = Color.Black)
+                        Spacer(Modifier.height(4.dp))
+                        Text("${page + 1}/${mats.size}", fontSize = 12.sp, color = Color.Black)
+                    }
+                }
             }
         }
     }

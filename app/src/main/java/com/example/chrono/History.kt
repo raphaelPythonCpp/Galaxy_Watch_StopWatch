@@ -32,6 +32,14 @@ object History {
         persist(c)
     }
 
+    fun delete(c: Context, index: Int) {
+        load(c)
+        if (index in sessions.indices) {
+            sessions.removeAt(index)
+            persist(c)
+        }
+    }
+
     fun clear(c: Context) {
         load(c)
         sessions.clear()

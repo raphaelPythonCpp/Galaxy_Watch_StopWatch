@@ -1,0 +1,314 @@
+================================================================================
+ SUPER STOPWATCH (v10) — DOCUMENT DE REPRISE POUR UNE IA
+ Projet : chronomètre Wear OS (Galaxy Watch 7) — Kotlin / Jetpack Compose for Wear OS
+ Auteur / chef de projet : Raphaël GARIVIER — Génération du code : Claude (Anthropic), octobre 2026
+================================================================================
+
+Lis ce document en entier avant de toucher au code. Il décrit : le but, la façon dont le projet a été
+généré, l'architecture, les conventions, les erreurs déjà rencontrées, ce qui n'est PAS testé, ce que
+l'utilisateur a refusé, et comment continuer.
+
+--------------------------------------------------------------------------------
+0. RÉSUMÉ EN 10 LIGNES
+--------------------------------------------------------------------------------
+- Application Wear OS 3+ (minSdk 30, targetSdk 34, compileSdk 34), package `com.example.chrono`, nom affiché
+  « Super StopWatch » (fixe, toutes langues).
+- Au départ : « ajouter à l'appli chrono Samsung un tour déclenché par le bouton physique bas ». L'appli Samsung
+  n'est pas modifiable (code fermé) => on a reconstruit une appli complète.
+- Projet 100 % généré par Claude dans une conversation, SANS environnement de compilation côté Claude :
+  le code n'a JAMAIS été compilé par Claude. L'utilisateur envoie le code sur GitHub, GitHub Actions compile,
+  l'utilisateur colle les logs d'erreur, Claude corrige. Toute modification doit donc être écrite avec une grande
+  prudence sur les API (pas de test possible).
+- Langue de travail : FRANÇAIS. L'utilisateur est sur Windows, n'utilise pas Android Studio, installe via adb.
+- Livrable à chaque tour : un fichier ChronoWatch.zip (projet Gradle complet) + explications courtes.
+- Interface : Compose for Wear OS (androidx.wear.compose 1.4.0) + Compose BOM 2024.06.00, Kotlin 1.9.24,
+  compiler extension 1.5.14, AGP 8.5.2, Gradle 8.7 (installé par le workflow, pas de wrapper jar).
+- Fonctions : chrono, tours, bouton physique, tile, complication, pastille « Ongoing Activity », historique,
+  QR codes, suivi avancé (allure + exercice/repos), verrou tactile, mode éco, AOD, mode clair, 3 langues,
+  12 logos, sliders à sous-menu min/max, bague rotative, etc.
+- Signature : build `release` signé avec la clé de DEBUG de la machine GitHub => clé différente à chaque build
+  => il faut désinstaller avant de réinstaller (`adb uninstall com.example.chrono`).
+
+--------------------------------------------------------------------------------
+1. HISTORIQUE DU PROJET ET MÉTHODE DE GÉNÉRATION
+--------------------------------------------------------------------------------
+1.1 Méthode (importante pour continuer)
+  a) L'utilisateur formule des modifications (souvent une longue liste, parfois ambiguë).
+  b) Claude répond d'abord par des QUESTIONS (parfois via un popup interactif à 3 questions max, parfois en texte
+     numéroté OUI/NON/MODIFIER) quand il y a une ambiguïté, puis génère.
+  c) Claude écrit les fichiers dans /home/claude/ChronoWatch, les zippe en /mnt/user-data/outputs/ChronoWatch.zip
+     et le présente avec `present_files`.
+  d) L'utilisateur glisse le dossier `app` (et les fichiers racine) dans GitHub (« Add file > Upload files »).
+     Le dossier caché `.github` N'EST PAS pris par le glisser-déposer : le fichier
+     `.github/workflows/build.yml` doit être créé/édité À LA MAIN dans l'interface web GitHub.
+  e) GitHub Actions compile. En cas d'échec l'utilisateur colle le log ; Claude corrige (souvent une seule erreur
+     visible à la fois, le compilateur Kotlin s'arrêtant à la première phase en échec).
+  f) L'utilisateur télécharge l'APK (Releases ou Artifacts) et l'installe avec adb sur la montre.
+1.2 Versions (chronologie)
+  - v1.0  : projet minimal (chrono Compose, tour via BackHandler), build debug.
+  - v2.0  : build release R8, tile, complication, sauvegarde d'état (SharedPreferences), vibrations, snake/anneau,
+            gradient de couleurs, dégradé vert→bleu→rouge, historique minimal.
+  - v2.1–2.3 : réglages, Always-on display (AmbientLifecycleObserver), mode éco, historique, QR planifié,
+            pastille Ongoing Activity, détection du réveil (pas de tour fantôme), couleur de référence RVB.
+  - v2.4–2.6 : appui long Reset (snake plein), verrou tactile (cadenas), curseurs de mise en page, espacements en %
+            de la hauteur d'écran, liste simple (LazyColumn), arrêt forcé détecté (ApplicationExitInfo),
+            arrêt auto, vibrations réglables, stockage des tours en ajout seul (mode éco).
+  - v2.7  : i18n FR/EN/ZH, mode clair, sous-menu min/max pour chaque slider (SliderState, 100 pas),
+            mode Personnalisation, bague rotative native + secours circulaire, colonnes mesurées (TextMeasurer).
+  - v10   : (version actuelle) logos (12), icône de l'appli par alias de lancement, QR codes (ZXing),
+            suivi avancé (allure + exercice/repos par alarmes), page de séance avec statistiques,
+            suppression d'une séance, aide, avertissements (mode clair / AOD), défilement auto de la liste,
+            icônes du haut en activité (appui long), 1 ligne par cran de bague, release GitHub automatique,
+            README et ce document.
+1.3 Erreurs de compilation déjà rencontrées (à ne pas refaire)
+  - Import du Tile : en tiles 1.4.x la classe `Tile` est `androidx.wear.tiles.TileBuilders.Tile`
+    (PAS `androidx.wear.protolayout.TileBuilders`). Resources/Timeline restent dans protolayout.
+  - `remember { }` interdit dans le contenu d'un `ScalingLazyColumn { }`/`LazyColumn { }` (scope non composable) :
+    calculer avant la colonne.
+  - Clash de signature JVM : une propriété `var x by ... private set` génère `setX(T)`. Ne JAMAIS déclarer une
+    fonction `setX(valeur)` à un seul paramètre du même type (ex. `setEcoBrightness(Int)`). Les fonctions
+    publiques du projet prennent (Context, valeur) ou s'appellent `updateX`.
+  - ListenableFuture : on utilise `CallbackToFutureAdapter.getFuture<T> { c -> c.set(x); "tag" }`
+    (androidx.concurrent:concurrent-futures), pas Guava.
+  - Les résultats `ScalingLazyColumn` centrent le 1er élément et estompent les bords : source de « black box ».
+    La liste des tours utilise donc `LazyColumn` (foundation) simple.
+  - Wear `Text` : pour que deux composables de même nom ne se télescopent pas, `itemsIndexed` de foundation est
+    importé avec alias (`as lazyItemsIndexed`) dans Screens.kt.
+1.4 Choses jamais vérifiées sur une vraie montre (ne pas les affirmer)
+  - Que la bague tactile Samsung envoie bien des événements rotatifs aux appli tierces (`onRotaryScrollEvent`).
+  - Que « Forcer l'arrêt » Samsung est classé `REASON_USER_REQUESTED`.
+  - Rendu exact du tile (ColorFilter, ressources vectorielles), complication, pastille Ongoing Activity.
+  - Lisibilité réelle des QR codes selon la version, rendu du glyphe ⚠️ (emoji) et des caractères chinois.
+  - Changement d'alias de lancement (icône) : délai de rafraîchissement du launcher.
+  - Les 12 vecteurs de logo ont été dessinés « à l'aveugle » (chemins SVG) : apparence non vérifiée.
+
+--------------------------------------------------------------------------------
+2. PRÉFÉRENCES ET RÈGLES DE L'UTILISATEUR
+--------------------------------------------------------------------------------
+- Répondre en français, concis, prose plutôt que longues listes sauf si utile. Pas de pavé de questions inutile.
+- Ne pas ajouter de fonctionnalités non demandées. Quand ce n'est pas clair : poser la question AVANT de générer.
+- Il veut des sliders partout, avec bornes « un peu trop larges », sous-menu min/max par appui long.
+- Il veut des appuis longs (durée réglable `hold`) avec snake de progression + vibration pour toute action
+  destructive (Reset, effacer, supprimer une séance, déverrouiller, réinitialiser la mise en page).
+- « Mode éco » = économie d'énergie maximale : niveaux de gris, pas de bague, pas d'AOD, MAJ 1 s, vibrations courtes.
+- Les espacements sont en % de la HAUTEUR de l'écran (0 % = les objets se touchent).
+- Le bouton du haut (Accueil) est réservé Samsung ; l'appui long du bouton bas ouvre Wallet : ne pas les utiliser.
+- Refusé / abandonné par l'utilisateur (ne pas reproposer sans qu'il le demande) : export réseau vers le
+  téléphone, appli compagnon, signature stable (« pas pour le moment »), sauvegarde/restauration, accessibilité,
+  vibrations différentes meilleur/pire tour, compte à rebours HIIT séparé, fréquence cardiaque, tile dynamique
+  (jugé peu rentable pour la batterie), verrou tactile levé par le bouton physique.
+- Il aime des noms précis : « Suivi avancé », « Personnalisation », « Super StopWatch » (nom d'appli fixe).
+
+--------------------------------------------------------------------------------
+3. ARCHITECTURE GÉNÉRALE
+--------------------------------------------------------------------------------
+Pattern : état global dans des `object` Kotlin (singletons) basés sur le système d'état de Compose
+(`mutableStateOf`, `mutableFloatStateOf`, `mutableStateListOf`), persistés dans SharedPreferences.
+Même processus pour l'activité, le tile, la complication et les BroadcastReceiver ; chaque point d'entrée appelle
+`Stopwatch.load(ctx)` (qui appelle aussi `Settings.load(ctx)`), idempotent.
+
+Fichiers (app/src/main/java/com/example/chrono/) :
+
+ MainActivity.kt      Activité + composable App() + Header().
+                      - onKeyDown(KEYCODE_BACK) -> handleButton() : navigation retour ou Stopwatch.primary().
+                      - Garde « réveil » : le bouton ne fait rien si ambiant / écran éteint / <600 ms après réveil.
+                      - App() : boucle de mise à jour (withFrameMillis + delay aligné sur le chiffre), verrou tactile
+                        (arme au Start, désarme à l'arrêt, auto-unlock), luminosité éco, stats des tours (remember),
+                        défilement de la liste (compensation d'insertion, option autoScroll), bague rotative
+                        (onRotaryScrollEvent, 1 ligne tous les N événements), écrans (when sur Ui.screen),
+                        icônes du haut (TopIcon), fenêtre d'avertissement (WarnDialog), HoldRing.
+ Components.kt        Thème (getters Fg/Bg/Dim/Soft/SurfaceBtn/RowBg/OffTrack/RingTrack avec inversion « mode clair »),
+                      enum Screen, object Ui, Ring (snake), HoldRing, tight() (texte compact), edgeFade(),
+                      TimeText, AmbientScreen (toujours noir), icônes dessinées en Canvas (menu, historique, aide,
+                      suivi, QR, cadenas), TopIcon, RoundButton, holdToConfirm() (appui long dynamique + vibration),
+                      HoldButton, circularScroll() (secours tactile + garde de la bande extérieure), Pill/ToggleRow/
+                      HalfToggle, SliderBar/SliderRow (curseurs), LapCols/rememberLapCols/LapRow/fmtPace,
+                      WarnDialog, QrCanvas.
+ Screens.kt           SettingsScreen (essentiels + Personnalisation + À propos), RangeScreen (sous-menu min/max),
+                      TrackScreen (suivi avancé), HelpScreen, HistoryScreen, SessionScreen (stats + tours + QR +
+                      suppression), QrScreen (HorizontalPager), LogoBox.
+ Settings.kt          class SliderState + object Settings (interrupteurs, sliders, getters, setX(c, v), load/persist).
+ Stopwatch.kt         État du chrono + actions + stockage des tours + arrêt forcé/auto + vibrations + formats.
+ Segments.kt          Suivi avancé : cycle exercice/repos, alarmes (setAlarmClock), avancement de la bague.
+ Receivers.kt         StopResetReceiver, AutoStopReceiver, SegmentReceiver.
+ History.kt           data class Session, object History (liste, persistance texte).
+ Qr.kt                Capacités QR (versions 5..25, L/M/Q/H), découpage en blocs, matrice ZXing.
+ Palette.kt           makePalette(rgb) (accent, mid, inverse, inverseDark), lapColor(), lapMarker(), argbLong().
+ I18n.kt              enum Lang {FR, EN, ZH}, enum S(fr,en,zh) = toutes les chaînes, `S.t()`.
+ Launcher.kt          Active 1 des 12 alias de lancement (icône), rafraîchit tile/complication.
+ Logos.kt             Tableaux des ressources `logo_01..12` (icône colorée) et `glyph_01..12` (blanc).
+ Ongoing.kt           Notification « chrono en cours » + OngoingActivity (+ action Stop+Reset).
+ StopwatchTileService.kt           Tile ProtoLayout (statique, rafraîchi 1 s si visible).
+ StopwatchComplicationService.kt   Complication SHORT_TEXT (temps en direct via TimeDifference) + icône.
+
+Ressources : res/drawable/logo_XX.xml, glyph_XX.xml, ic_stopwatch.xml (ancien pictogramme), ic_launcher.xml (ancien) ;
+res/values{,-en,-zh}/strings.xml (app_name = « Super StopWatch », tile_description).
+Manifeste : 1 activité MainActivity (sans filtre LAUNCHER), 12 `activity-alias` `.Logo01..12` portant le filtre
+LAUNCHER (un seul `enabled=true` à la fois, label fixe « Super StopWatch »), 3 receivers, 1 tile service, 1 complication.
+Permissions : VIBRATE, WAKE_LOCK, POST_NOTIFICATIONS. `setAlarmClock` n'exige pas de permission d'alarme exacte.
+
+--------------------------------------------------------------------------------
+4. DÉTAILS PAR DOMAINE
+--------------------------------------------------------------------------------
+4.1 Chrono (Stopwatch.kt)
+  - Temps = heure murale : `startedAt` (System.currentTimeMillis) + `accumulated`. elapsed() = accumulated +
+    (now - startedAt) si running, plafonné à la limite d'arrêt auto. Pas de boucle de service : un process tué ne
+    perd pas le temps.
+  - Persistance SharedPreferences("stopwatch") : run, acc, start, nonce, lapsFile, laps.
+  - Tours (`laps`, plus récent d'abord, Lap(index, lapTime, total)). Stockage : préférences (mode normal) ou fichier
+    `files/laps.log` en AJOUT SEUL (mode éco : lignes `L,idx,lap,total` et `U` pour annuler) ; `syncLapStore()`
+    migre une fois quand le mode éco change (à appeler AVANT de modifier la liste).
+  - reset(c, vibrate) : si !running et acc>0 -> History.add(Session). stopAndReset(c, at, silent) pour la notif et
+    l'arrêt forcé. `finishReset()` annule les alarmes (auto-stop, segments), efface le fichier de tours.
+  - Arrêt forcé : au load(), ActivityManager.getHistoricalProcessExitReasons ; si REASON_USER_REQUESTED, chrono en
+    marche et timestamp > startedAt => stopAndReset(c, timestamp, silent).
+  - Arrêt auto : Settings.autoStopMin ; alarme inexacte (AutoStopReceiver) + vérification à chaque tick/ouverture.
+  - Vibrations : buzz(c, strong) (tour = 55 ms, start/stop = double 140 ms, amplitudes × Settings.vibePct) ;
+    en éco : une impulsion courte ; buzzSegment(c, type) (0 fin d'exercice 2 impulsions, 1 début de repos 1 longue,
+    2 fin de repos 3 courtes).
+  - Formats : fmtMain (mm:ss, h:mm:ss, ou secondes seules si secMode), fmtTenth (.d), fmtFull. JAMAIS plus que les
+    dixièmes à l'écran.
+4.2 Interface principale
+  - Colonne : [haut : temps + cercles, collés en bas de leur zone, poids = topPct] [espace gapBtnLap] [bas : liste]. La
+    frontière est le curseur « Haut de l'écran ». Le bas démarre en haut de sa zone.
+  - Liste des tours : LazyColumn ; contentPadding bas = hauteur de la zone (n'importe quel tour peut monter en haut) ;
+    sans clés d'items : on compense nous-mêmes l'insertion en tête (voir LaunchedEffect(itemCount)) : en haut et
+    autoScroll => reste en haut (nouveau tour visible) ; sinon `scrollToItem(idx + d, offset)`.
+  - Colonnes : n°, total, tour (+ marqueur ▲▼), allure, écart. Largeurs mesurées avec `rememberTextMeasurer` sur les
+    valeurs réelles ; `Row.requiredWidth(max(somme, availW))` + `Arrangement.SpaceBetween` ; `overflow = Visible`,
+    jamais de rognage. Moyenne optionnelle en 1re ligne.
+  - Bague (Ring) : snake de longueur snakePct (1..100 % de la circonférence), tête = couleur forte, queue = couleur du
+    cercle (dégradé sweep). Avancement : (temps depuis le dernier tour) / (meilleur tour) ; 60 s s'il n'y a pas de tour ;
+    si Segments.enabled() : avancement du segment exercice/repos courant. Pas de limite basse (>= 1 ms).
+  - HoldRing : arc plein de la couleur de référence qui se remplit pendant tout appui long (Ui.hold).
+  - Icônes du haut (28 dp, centrées ensemble) : au repos réglages/historique/[aide]/[suivi] (appui simple) ; en activité
+    [réglages si runIcons]/[suivi] (appui long) + cadenas (appui long déverrouille) quand verrouillé.
+4.3 Verrou tactile
+  - S'enclenche uniquement au Start pendant la session de l'appli (jamais restauré) ; se lève à l'arrêt, au relancement,
+    par maintien du cadenas, ou après N minutes (autoUnlock). Un Box plein écran consomme tous les gestes, les icônes
+    du haut (dessinées après) restent actives par appui long. La bague (rotative) reste active selon `ringInLock`.
+4.4 holdToConfirm (Components.kt)
+  - Modifier composable : `detectTapGestures(onPress)` ; boucle à 16 ms ; durée lue À CHAQUE image dans
+    `Settings.holdMs` (dynamique) ; à la réussite : Ui.hold = 0, vibration forte, puis action. Si on relâche : annulation.
+  - Les actions n'ajoutent PAS leur propre vibration (ex. `Stopwatch.reset(ctx, false)`).
+4.5 Sliders (Settings.kt : SliderState)
+  - Chaque slider a value, lo, hi (plage de travail) et des bornes d'origine min0..max0 (larges). 100 pas entre lo et hi
+    (`setFromFraction`). `curve = 2` (autoUnlock, autoStop) : échelle quadratique. `choices` : valeurs discrètes
+    (précision de distance, pas de sous-menu). `stepProvider` : pas imposé (distance = précision ; temps = 1 s ; etc.).
+  - Appui long sur un slider (SliderRow) => RangeScreen (deux SliderBar Min/Max sur les bornes d'origine, écart min 1 %
+    de la plage d'origine, bouton « plage d'origine » à maintenir). Retour : `Ui.rangeFrom`.
+  - Persistance : clés `sl_<key>`, `sl_<key>_lo`, `sl_<key>_hi` (floats). ecoBright ne persiste pas sa valeur (0 % à
+    chaque activation du mode éco). `persistSliders(ctx)` à chaque relâchement.
+  - SliderRow(spec, accent, enabled, unit, fmt, onRelease). Aimant aux extrémités (<3 % -> 0, >97 % -> 1), aucune
+    bande résiduelle à 0.
+4.6 Réglages (SettingsScreen)
+  - Toujours visibles : Mode éco (+ luminosité éco), temps de maintien, couleur RVB, cercle, verrou tactile (+ déverrouillage
+    auto, « bague en verrou »), always-on display (avec avertissement), interrupteur Personnalisation, À PROPOS (v10,
+    « Raphaël GARIVIER avec Claude, Octobre 2026 »).
+  - Personnalisation : langue (3 boutons exclusifs « Français / English / 中文 »), logos (grille 4×3 avec aperçus),
+    mode clair (avertissement), taille du snake, bague tactile de secours, événements par ligne, défilement auto,
+    réglages en activité, aide, suivi avancé, mode gaucher, bouton annuler tour, temps en secondes, fondu des tours,
+    colonnes (2-2-2 : N°/Total, Tour/Écart, Allure/Moy.), QR (version 5..25, correction L/M/Q/H, affichant le nombre
+    de tours approximatif), tailles, espacements (% hauteur), disposition (haut %, largeur %), mise en page par défaut
+    (appui long), vibrations (aperçu à la relâche), arrêt auto.
+4.7 Suivi avancé (TrackScreen + Segments.kt)
+  - Précision (0,1 … 1000 m, 13 valeurs), distance par tour (0 … 10000 m, pas = précision ; 0 = pas de colonne allure),
+    temps d'exercice (0 = aucun objectif ; 0 … 3600 s), répétitions (1 … 100), repos (0 … 3600 s).
+  - Cycle : exercice × nbRep, puis repos, puis on recommence ; basé sur le temps du chrono. À chaque frontière :
+    alarme `setAlarmClock` -> SegmentReceiver -> vibration du type puis replanification. `Segments.schedule(c)` est
+    appelé : au Start, au load() si running, à la fin d'un réglage, à l'activation du suivi ; `cancel(c)` à l'arrêt/reset.
+  - Allure : `fmtPace(lapMs, distM)` -> « 3'32/km » ; la colonne n'existe que si track && colPace && distance > 0.
+4.8 Historique, séances, QR
+  - Session(ts, total, laps = durées en ms). Max 50, stockage `data` texte `ts;total;l1,l2,...` par ligne.
+  - HistoryScreen : appui = ouvrir, maintien = supprimer la séance, bouton « tout effacer » (maintien).
+  - SessionScreen : date/heure (nom automatique), total, StatsBlock minimaliste (meilleur, pire, moyenne, médiane,
+    écart-type, régularité = 1 - sd/moyenne, barres colorées), tours, bouton QR, bouton supprimer (maintien).
+  - QR : texte `[73.12, 44.23, 20.00, 33.03]` (secondes, 2 décimales, séparateur ", "). Une séance sans tour => `[total]`.
+    Capacité en octets (mode binaire) par version 5..25 et niveau L/M/Q/H ; `qrBlocks` découpe de façon exacte ; ZXing
+    avec hints ERROR_CORRECTION, QR_VERSION, MARGIN 0 ; fond blanc forcé, luminosité max pendant l'affichage,
+    HorizontalPager entre blocs, indicateur « n/N ». Nombre de tours approximatif affiché dans les sliders = capacité / 7.
+4.9 Thème / mode clair / langues / logos
+  - Mode clair = inversion 255 − rgb de tous les gris via les getters Fg/Bg/Dim/… (`g()`), ne touche ni les couleurs de
+    référence ni l'AOD (noir fixe) ni le tile (sombre). Avertissement (⚠️) avant activation (aussi pour l'AOD).
+  - Langues : `S.t()` lit `Settings.lang`. Le nom de l'appli ne change pas. Le chinois est du mandarin simplifié simple.
+  - Logos : 12 styles, `Logos.launcher[i]` (aperçu + alias) et `Logos.glyph[i]` (tile teinté par la couleur de
+    référence via ColorFilter, complication monochromatique, notification). Changer de logo = `Launcher.apply` (active
+    l'alias i, désactive les autres) + `Launcher.refresh` (tile/complication).
+4.10 Tile / complication / pastille
+  - Tile : version de ressources « 3-<logo> » ; boutons dont l'id porte un nonce (`left:<n>`/`right:<n>`) pour qu'un
+    clic ne soit traité qu'une fois ; Reset absent du tile (protégé dans l'appli). Rafraîchi chaque seconde si visible
+    (5 s en éco).
+  - Complication : SHORT_TEXT (en marche : TimeDifferenceComplicationText STOPWATCH, la montre le fait avancer) et
+    MONOCHROMATIC_IMAGE. Mise à jour demandée seulement sur start/stop/reset.
+  - Ongoing : notification IMPORTANCE_LOW + OngoingActivity (StopwatchPart) + action « Stop + Reset ».
+
+--------------------------------------------------------------------------------
+5. BUILD, RELEASE, INSTALLATION
+--------------------------------------------------------------------------------
+- app/build.gradle.kts : buildType release (minify + shrink R8, signé avec `signingConfigs.getByName("debug")`),
+  `resourceConfigurations += fr, en, zh`, lint désactivé pour la release, dépendances : compose BOM 2024.06.00,
+  activity-compose 1.9.0, wear compose material/foundation 1.4.0, wear 1.3.0, wear-ongoing 1.0.0, core 1.13.1,
+  profileinstaller 1.3.1, tiles 1.4.1, protolayout 1.2.1, concurrent-futures 1.2.0,
+  watchface-complications-data-source-ktx 1.2.1, zxing core 3.5.3.
+- Workflow `.github/workflows/build.yml` : checkout, Java 17 (temurin), setup-gradle (8.7), `gradle assembleRelease
+  --no-daemon`, copie en `SuperStopWatch-v10-build<N>.apk`, upload-artifact, `softprops/action-gh-release@v2`
+  (tag `v10-build<N>`, `permissions: contents: write`). Si la release échoue : réglage du dépôt « Read and write
+  permissions ». Ce fichier doit être édité à la main sur github.com (dossier caché).
+- Installation Windows : platform-tools, `adb pair IP:PORT`, `adb connect IP:PORT`, `adb install fichier.apk`.
+  Mise à jour : `adb uninstall com.example.chrono` puis install (clés de debug différentes à chaque build).
+- Améliorations possibles (non faites, pas voulues pour l'instant) : keystore stable en secret GitHub.
+
+--------------------------------------------------------------------------------
+6. CONVENTIONS DE CODE À RESPECTER
+--------------------------------------------------------------------------------
+- Toute chaîne visible passe par `S.XXX.t()` (3 langues). Ajouter une entrée dans `enum S` pour chaque nouveau texte.
+- Toute nouvelle valeur numérique réglable = un `SliderState` dans `Settings` ajouté à `sliders` (sinon pas
+  persisté ni accessible au sous-menu), affiché avec `SliderRow`.
+- Tout nouveau booléen = `var x by mutableStateOf(..) private set` + `setX(c: Context, v: Boolean)` + clé dans load().
+  Attention au clash JVM (voir 1.3).
+- Aucune couleur grise en dur dans l'UI : utiliser Fg/Bg/Dim/Soft/SurfaceBtn/RowBg/OffTrack (mode clair).
+  Couleurs « de couleur » : via `Palette` (accent, mid, inverse, inverseDark) ; en éco : gris.
+- Toute action destructive : `Modifier.holdToConfirm { ... }` (ne pas coder sa propre vibration).
+- Les espacements d'interface se règlent en % de `LocalConfiguration.screenHeightDp`.
+- Le texte numérique utilise `tight(sizeSp)` (interligne 0,8 em, marges supprimées) pour que 0 % = contact.
+- Les points d'entrée (Receiver, Tile, Complication) appellent `Stopwatch.load(ctx)` d'abord.
+- Les lectures d'état dans une `draw lambda` ne déclenchent que le dessin (utilisé par la bague pour la performance) ;
+  `TimeText` est une feuille qui lit seule `now` pour ne recomposer que le texte du temps.
+- Batterie : pas de boucle quand l'écran n'est pas visible (`withFrameMillis`), mise à jour alignée sur le chiffre,
+  alarmes seulement aux frontières, pas de récepteur de diffusion permanent.
+- API incertaines : privilégier celles déjà utilisées dans le projet et déjà compilées ; signaler dans la réponse
+  tout ce qui n'a pas pu être vérifié.
+
+--------------------------------------------------------------------------------
+7. COMMENT CONTINUER (MODE D'EMPLOI POUR UNE IA)
+--------------------------------------------------------------------------------
+1) Demande à l'utilisateur le dernier ZIP/le dépôt GitHub ou colle les fichiers modifiés ; ne réécris pas des fichiers
+   que tu ne connais pas. Les noms de fichiers ci-dessus sont les seuls fichiers de code.
+2) Pour chaque demande : liste ce qui est faisable, ce qui ne l'est pas (et pourquoi), pose les questions utiles,
+   puis génère seulement après confirmation si la demande est ambiguë.
+3) Après modification : recopier le projet complet en zip, lister les fichiers à remplacer, rappeler
+   `adb uninstall com.example.chrono` avant réinstallation, et fournir la correction rapide en 2 modifications de
+   fichier si un build échoue.
+4) Si un build échoue : lire la PREMIÈRE erreur, corriger le fichier concerné, penser aux erreurs en cascade.
+5) Idées restant ouvertes (acceptées en principe mais non faites ou à valider) : signature stable de l'APK ;
+   vérification sur montre réelle des 12 logos ; ajustement de la lisibilité des QR par version ; traduction relue du chinois.
+6) Ne jamais promettre qu'une fonction marche sur la montre : le code n'a jamais été exécuté par l'IA.
+
+--------------------------------------------------------------------------------
+8. GLOSSAIRE
+--------------------------------------------------------------------------------
+- « Snake » : arc blanc/dégradé qui tourne autour de l'écran (bague) ; aussi l'arc plein de progression d'un appui long.
+- « Bague » : le cercle extérieur dessiné ; « bague rotative/tactile » : l'entrée rotative du système (molette ou bezel tactile).
+- « tempsDeMaintien » : durée d'un appui long (Settings.hold, 0,1–10 s, 2 s par défaut).
+- « Haut » / « bas » : zone temps+cercles / zone des tours.
+- « Essentiels » : réglages affichés même sans Personnalisation.
+- « Suivi avancé » : menu distance/allure + exercice/repos.
+- « Alias » : `activity-alias` du manifeste, utilisé pour changer l'icône de l'appli.
+
+--------------------------------------------------------------------------------
+9. LICENCE ET CRÉDITS
+--------------------------------------------------------------------------------
+Aucune licence n'a été choisie à ce jour (à décider par l'auteur). Bibliothèques : AndroidX/Jetpack Compose et Wear
+Compose (Apache 2.0), ZXing (Apache 2.0). Non affilié à Samsung. Auteur : Raphaël GARIVIER ; code généré avec Claude
+(Anthropic), octobre 2026.
+================================================================================

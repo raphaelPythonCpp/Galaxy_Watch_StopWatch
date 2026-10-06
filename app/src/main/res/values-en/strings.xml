@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">Stopwatch</string>
+    <string name="app_name">Super StopWatch</string>
     <string name="tile_description">Stopwatch: start, lap, stop</string>
 </resources>

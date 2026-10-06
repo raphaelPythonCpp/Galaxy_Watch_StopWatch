@@ -17,11 +17,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -48,6 +46,7 @@ class MainActivity : ComponentActivity() {
         Ui.ambient = false
         Ui.locked = false          // jamais verrouillé au (re)démarrage de l'appli
         Ui.hold = 0f
+        Ui.warn = -1
 
         // Permission de notification (pastille « chrono en cours » sur le cadran), demandée une seule fois
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -117,11 +116,13 @@ class MainActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_BACK) true else super.onKeyUp(keyCode, event)
 
     private fun handleButton() {
+        if (Ui.warn >= 0) { Ui.warn = -1; return }
         if (Ui.screen != Screen.MAIN) {
-            // retour : sous-menu -> réglages, séance -> historique, le reste -> écran principal
+            // retour : codes QR -> séance, séance -> historique, sous-menu -> son écran d'origine, le reste -> principal
             Ui.screen = when (Ui.screen) {
+                Screen.QR -> Screen.SESSION
                 Screen.SESSION -> Screen.HISTORY
-                Screen.RANGE -> Screen.SETTINGS
+                Screen.RANGE -> Ui.rangeFrom
                 else -> Screen.MAIN
             }
             return
@@ -136,6 +137,9 @@ class MainActivity : ComponentActivity() {
 }
 
 private class LapStats(val min: Long, val max: Long, val avg: Long)
+
+/** Compteur d'événements de la bague rotative (1 ligne tous les N événements, dans le même sens). */
+private class RotState { var count = 0; var dir = 0f }
 
 private val LightColors = Colors(
     background = Color.White,
@@ -157,7 +161,7 @@ fun App() {
     val ambient = Ui.ambient
     val eco = Settings.eco
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
-    val holdColor = if (eco) Fg else pal.accent
+    val accent = if (eco) Fg else pal.accent
 
     // Mise à jour : 0,1 s (normal) ou 1 s (éco / ambiant), calée sur le changement de chiffre.
     // withFrameMillis ne reprend que si l'écran est visible : aucun réveil quand l'écran est éteint.
@@ -215,7 +219,7 @@ fun App() {
         )
     }
     val cols = rememberLapCols(laps, true, Settings.textSp)
-    // Bague : 1 tour = 1' au départ, puis = meilleur tour (sans limite basse, seulement >= 1 ms)
+    // Bague : 1 tour = 1' au départ, puis = meilleur tour ; avec un objectif d'exercice, = le segment en cours
     val ringRef = if (laps.isEmpty()) 60_000L else stats.min.coerceAtLeast(1L)
     val idle = !running && acc == 0L
     val topF = Settings.topPct / 100f
@@ -223,10 +227,28 @@ fun App() {
     val showBottom = topF < 0.96f
     val gapBtnLap = (Settings.gapBtnLapPct / 100f * hDp).dp
     val lineGap = (Settings.lineGapPct / 100f * hDp).dp
+    val showAvg = Settings.showAvg && laps.size >= 2
 
-    // Défilement de la liste des tours : bague rotative native (tactile Samsung) + secours au doigt
+    // Liste des tours : démarre en haut ; si on est en haut, un nouveau tour reste visible en haut (option « défilement
+    // auto ») ; sinon la vue ne bouge pas (on compense l'élément ajouté en tête).
     val listState = rememberLazyListState()
+    val itemCount = laps.size + (if (showAvg) 1 else 0)
+    var prevCount by remember { mutableIntStateOf(itemCount) }
+    LaunchedEffect(itemCount) {
+        val d = itemCount - prevCount
+        prevCount = itemCount
+        if (itemCount == 0) {
+            listState.scrollToItem(0)
+        } else if (d > 0) {
+            val idx = listState.firstVisibleItemIndex
+            val off = listState.firstVisibleItemScrollOffset
+            if (idx > 0 || off > 0 || !Settings.autoScroll) listState.scrollToItem(idx + d, off)
+        }
+    }
+
+    // Bague rotative native (tactile Samsung) : exactement 1 ligne par déclenchement
     val focus = remember { FocusRequester() }
+    val rot = remember { RotState() }
     val lineStepPx = with(LocalDensity.current) { (Settings.textSp * 0.8f).sp.toPx() + lineGap.toPx() }
     LaunchedEffect(Ui.screen, ambient) {
         try { focus.requestFocus() } catch (e: Exception) { }
@@ -236,9 +258,9 @@ fun App() {
         Box(
             Modifier.fillMaxSize().background(Bg)
                 .circularScroll(
-                    enabled = {
-                        Ui.screen == Screen.MAIN && !Ui.ambient && Settings.touchRing &&
-                            (!Ui.locked || Settings.ringInLock)
+                    active = { Ui.screen == Screen.MAIN && !Ui.ambient },
+                    scrollEnabled = {
+                        Settings.touchRing && (!Ui.locked || Settings.ringInLock)
                     },
                     onLines = { n -> listState.dispatchRawDelta(n * lineStepPx) }
                 )
@@ -247,19 +269,33 @@ fun App() {
                 ambient -> AmbientScreen(now)
                 Ui.screen == Screen.SETTINGS -> SettingsScreen()
                 Ui.screen == Screen.RANGE -> RangeScreen()
+                Ui.screen == Screen.TRACK -> TrackScreen()
+                Ui.screen == Screen.HELP -> HelpScreen()
                 Ui.screen == Screen.HISTORY -> HistoryScreen()
                 Ui.screen == Screen.SESSION -> SessionScreen()
+                Ui.screen == Screen.QR -> QrScreen()
                 else -> {
                     if (Settings.ringActive) {
                         Ring(Settings.snakePct / 100f) {
-                            (((now.longValue - lastTotal).coerceAtLeast(0L)) % ringRef).toFloat() / ringRef
+                            val e = now.longValue
+                            if (Segments.enabled()) Segments.ringFrac(e)
+                            else (((e - lastTotal).coerceAtLeast(0L)) % ringRef).toFloat() / ringRef
                         }
                     }
                     Column(
                         Modifier.fillMaxSize()
                             .onRotaryScrollEvent { e ->
                                 if (!Ui.locked || Settings.ringInLock) {
-                                    listState.dispatchRawDelta(e.verticalScrollPixels)
+                                    val d = e.verticalScrollPixels
+                                    val dir = if (d > 0f) 1f else if (d < 0f) -1f else 0f
+                                    if (dir != 0f) {
+                                        if (dir != rot.dir) { rot.count = 0; rot.dir = dir }
+                                        rot.count++
+                                        if (rot.count >= Settings.ringEventsPerLine) {
+                                            rot.count = 0
+                                            listState.dispatchRawDelta(dir * lineStepPx)   // 1 ligne, pas plus
+                                        }
+                                    }
                                     true
                                 } else false
                             }
@@ -293,8 +329,8 @@ fun App() {
                                     verticalArrangement = Arrangement.spacedBy(lineGap),
                                     contentPadding = PaddingValues(bottom = ((1f - topF) * hDp).dp)
                                 ) {
-                                    if (laps.size >= 2) {
-                                        item(key = "avg") {
+                                    if (showAvg) {
+                                        item {
                                             Text(
                                                 S.AVG.t() + " " + fmtFull(stats.avg),
                                                 fontSize = Settings.textSp.sp,
@@ -303,7 +339,7 @@ fun App() {
                                             )
                                         }
                                     }
-                                    itemsIndexed(laps, key = { _, lap -> lap.index }) { i, lap ->
+                                    itemsIndexed(laps) { i, lap ->
                                         LapRow(
                                             lap, laps.getOrNull(i + 1)?.lapTime,
                                             lapColor(lap.lapTime, stats.min, stats.max, eco, pal),
@@ -315,19 +351,8 @@ fun App() {
                             }
                         }
                     }
-                    if (idle) {
-                        Box(
-                            Modifier.fillMaxSize().padding(top = 16.dp),
-                            contentAlignment = Alignment.TopCenter
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                MenuButton { Ui.screen = Screen.SETTINGS }
-                                HistoryButton { Ui.screen = Screen.HISTORY }
-                            }
-                        }
-                    }
                     if (Ui.locked) {
-                        // Bloque tout le tactile...
+                        // Bloque tout le tactile (les icônes du haut, dessinées ensuite, restent actives par appui long)
                         Box(
                             Modifier.fillMaxSize().pointerInput(Unit) {
                                 awaitPointerEventScope {
@@ -337,19 +362,47 @@ fun App() {
                                 }
                             }
                         )
-                        // ... sauf le cadenas : le maintenir (temps de maintien des réglages) déverrouille
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-                            Box(
-                                Modifier.padding(top = 8.dp).size(44.dp).clip(CircleShape)
-                                    .holdToConfirm { Ui.locked = false },
-                                contentAlignment = Alignment.Center
-                            ) { LockIcon() }
+                    }
+                    // Icônes du haut, centrées ensemble.
+                    // Repos : réglages, historique, [aide], [suivi] (appui simple).
+                    // Activité : [réglages], [suivi] (appui long) et cadenas (appui long = déverrouille).
+                    Box(
+                        Modifier.fillMaxSize().padding(top = 14.dp),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (idle) {
+                                TopIcon(false, { Ui.screen = Screen.SETTINGS }) { MenuGlyph() }
+                                TopIcon(false, { Ui.screen = Screen.HISTORY }) { HistoryGlyph() }
+                                if (Settings.help) TopIcon(false, { Ui.screen = Screen.HELP }) { HelpGlyph() }
+                                if (Settings.track) TopIcon(false, { Ui.screen = Screen.TRACK }) { TrackGlyph() }
+                            } else {
+                                if (Settings.runIcons) TopIcon(true, { Ui.screen = Screen.SETTINGS }) { MenuGlyph() }
+                                if (Settings.track) TopIcon(true, { Ui.screen = Screen.TRACK }) { TrackGlyph() }
+                                if (Ui.locked) TopIcon(true, { Ui.locked = false }) { LockIcon() }
+                            }
                         }
                     }
                 }
             }
             // Progression des appuis longs (Reset, effacement, cadenas, sous-menus, mise en page par défaut)
-            HoldRing(holdColor)
+            HoldRing(accent)
+
+            // Avertissement avant d'activer le mode clair (0) ou l'always-on display (1)
+            if (Ui.warn >= 0) {
+                WarnDialog(
+                    Ui.warn, accent,
+                    onOk = {
+                        if (Ui.warn == 0) Settings.setLight(ctx, true)
+                        else {
+                            Settings.setAod(ctx, true)
+                            (ctx as? Activity)?.recreate()
+                        }
+                        Ui.warn = -1
+                    },
+                    onCancel = { Ui.warn = -1 }
+                )
+            }
         }
     }
 }

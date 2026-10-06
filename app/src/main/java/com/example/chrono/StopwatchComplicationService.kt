@@ -35,8 +35,10 @@ class StopwatchComplicationService : SuspendingComplicationDataSourceService() {
         }
     }
 
-    private fun icon() =
-        MonochromaticImage.Builder(Icon.createWithResource(this, R.drawable.ic_stopwatch)).build()
+    private fun icon(): MonochromaticImage {
+        Settings.load(this)
+        return MonochromaticImage.Builder(Icon.createWithResource(this, Logos.glyph[Settings.logo])).build()
+    }
 
     private fun tap(): PendingIntent =
         PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)

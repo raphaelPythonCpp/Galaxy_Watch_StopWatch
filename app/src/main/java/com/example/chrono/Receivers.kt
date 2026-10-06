@@ -19,3 +19,13 @@ class AutoStopReceiver : BroadcastReceiver() {
         Stopwatch.enforceAutoStop(context)
     }
 }
+
+/** Frontière d'un segment (exercice / repos) : vibration propre à chaque type, puis alarme suivante. */
+class SegmentReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        Stopwatch.load(context)
+        if (!Stopwatch.running || !Segments.enabled()) return
+        Stopwatch.buzzSegment(context, intent.getIntExtra("type", 0))
+        Segments.schedule(context)
+    }
+}

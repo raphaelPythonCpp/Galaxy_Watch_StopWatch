@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">Chrono</string>
+    <string name="app_name">Super StopWatch</string>
     <string name="tile_description">Chronomètre : start, tour, arrêt</string>
 </resources>

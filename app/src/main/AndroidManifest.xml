@@ -7,7 +7,7 @@
 
     <application
         android:label="@string/app_name"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@drawable/logo_01"
         android:allowBackup="false"
         android:theme="@android:style/Theme.DeviceDefault">
 
@@ -21,12 +21,12 @@
             android:launchMode="singleTask"
             android:enableOnBackInvokedCallback="false" />
 
-        <!-- Un seul alias actif à la fois : le nom de l'icône suit la langue choisie dans l'appli -->
+        <!-- 12 logos : un seul alias actif à la fois ; le nom reste « Super StopWatch » dans toutes les langues -->
         <activity-alias
-            android:name=".LaunchFr"
+            android:name=".Logo01"
             android:targetActivity=".MainActivity"
-            android:label="Chrono"
-            android:icon="@drawable/ic_launcher"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_01"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -35,10 +35,10 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".LaunchEn"
+            android:name=".Logo02"
             android:targetActivity=".MainActivity"
-            android:label="Stopwatch"
-            android:icon="@drawable/ic_launcher"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_02"
             android:enabled="false"
             android:exported="true">
             <intent-filter>
@@ -47,10 +47,118 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".LaunchZh"
+            android:name=".Logo03"
             android:targetActivity=".MainActivity"
-            android:label="秒表"
-            android:icon="@drawable/ic_launcher"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_03"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo04"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_04"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo05"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_05"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo06"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_06"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo07"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_07"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo08"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_08"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo09"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_09"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo10"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_10"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo11"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_11"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Logo12"
+            android:targetActivity=".MainActivity"
+            android:label="Super StopWatch"
+            android:icon="@drawable/logo_12"
             android:enabled="false"
             android:exported="true">
             <intent-filter>
@@ -61,6 +169,7 @@
 
         <receiver android:name=".StopResetReceiver" android:exported="false" />
         <receiver android:name=".AutoStopReceiver" android:exported="false" />
+        <receiver android:name=".SegmentReceiver" android:exported="false" />
 
         <service
             android:name=".StopwatchTileService"

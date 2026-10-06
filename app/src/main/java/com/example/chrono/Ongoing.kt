@@ -17,6 +17,7 @@ object Ongoing {
     fun show(c: Context, startRefMs: Long) {
         try {
             val app = c.applicationContext
+            val ico = Logos.glyph[Settings.logo]
             val nm = app.getSystemService(NotificationManager::class.java) ?: return
             nm.createNotificationChannel(
                 NotificationChannel(CH, S.NOTIF_CHANNEL.t(), NotificationManager.IMPORTANCE_LOW)
@@ -30,8 +31,8 @@ object Ongoing {
                 app, 1, Intent(app, StopResetReceiver::class.java), PendingIntent.FLAG_IMMUTABLE
             )
             val nb = NotificationCompat.Builder(app, CH)
-                .addAction(R.drawable.ic_stopwatch, S.NOTIF_STOP_RESET.t(), stopPi)
-                .setSmallIcon(R.drawable.ic_stopwatch)
+                .addAction(ico, S.NOTIF_STOP_RESET.t(), stopPi)
+                .setSmallIcon(ico)
                 .setContentTitle(S.NOTIF_TITLE.t())
                 .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
                 .setOngoing(true)
@@ -42,7 +43,7 @@ object Ongoing {
                 .addPart("time", Status.StopwatchPart(startRefMs))
                 .build()
             val oa = OngoingActivity.Builder(app, ID, nb)
-                .setStaticIcon(R.drawable.ic_stopwatch)
+                .setStaticIcon(ico)
                 .setTouchIntent(pi)
                 .setStatus(status)
                 .build()

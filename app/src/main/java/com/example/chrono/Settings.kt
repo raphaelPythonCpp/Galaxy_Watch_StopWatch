@@ -4,19 +4,23 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
  * Un curseur à 100 pas entre lo et hi (réglables par appui long : sous-menu min/max).
  * min0..max0 = bornes d'origine, larges, qui limitent les curseurs du sous-menu.
+ * choices : valeurs discrètes (pas de sous-menu). stepProvider : pas imposé (ex. précision de la distance).
  */
 class SliderState(
     val key: String, val label: S, val min0: Float, val max0: Float, val def: Float,
-    val curve: Int = 1, val persistValue: Boolean = true
+    val curve: Int = 1, val persistValue: Boolean = true,
+    val choices: List<Float>? = null, val stepProvider: (() -> Float)? = null
 ) {
     var value by mutableFloatStateOf(def)
     var lo by mutableFloatStateOf(min0)
@@ -28,10 +32,31 @@ class SliderState(
     /** Plus petit écart autorisé entre lo et hi : 1 % de la plage d'origine. */
     val gap0: Float get() = (max0 - min0) / 100f
 
-    fun fraction(): Float =
-        if (hi <= lo) 0f else unshape(((value - lo) / (hi - lo)).coerceIn(0f, 1f))
+    /** Pas effectif : imposé, ou (hi - lo) / 100. */
+    val effStep: Float get() = stepProvider?.invoke()?.coerceAtLeast(1e-4f) ?: ((hi - lo) / 100f)
+
+    fun fraction(): Float {
+        val ch = choices
+        if (ch != null) {
+            val i = ch.indices.minByOrNull { abs(ch[it] - value) } ?: 0
+            return if (ch.size > 1) i / (ch.size - 1f) else 0f
+        }
+        return if (hi <= lo) 0f else unshape(((value - lo) / (hi - lo)).coerceIn(0f, 1f))
+    }
 
     fun setFromFraction(f: Float) {
+        val ch = choices
+        if (ch != null) {
+            value = ch[(f.coerceIn(0f, 1f) * (ch.size - 1)).roundToInt()]
+            return
+        }
+        if (stepProvider != null) {
+            val step = effStep
+            val raw = lo + f.coerceIn(0f, 1f) * (hi - lo)
+            val n = ((raw - lo) / step).roundToInt()
+            value = (lo + n * step).coerceIn(lo, hi)
+            return
+        }
         val n = (f.coerceIn(0f, 1f) * 100f).roundToInt()
         value = lo + shape(n / 100f) * (hi - lo)
     }
@@ -45,22 +70,30 @@ class SliderState(
     fun resetValue() { value = def.coerceIn(lo, hi) }
 
     /** Texte d'une valeur, avec autant de décimales que le pas le demande. */
-    fun text(v: Float = value, step: Float = (hi - lo) / 100f): String {
+    fun text(v: Float = value, step: Float = effStep): String {
+        if (choices != null) {
+            return if (v % 1f == 0f) String.format(Locale.ROOT, "%.0f", v) else String.format(Locale.ROOT, "%.1f", v)
+        }
         val d = if (step >= 1f) 0 else if (step >= 0.1f) 1 else 2
         return String.format(Locale.ROOT, "%.${d}f", v)
     }
 
     fun load(sp: SharedPreferences) {
-        lo = sp.getFloat("sl_${key}_lo", min0)
-        hi = sp.getFloat("sl_${key}_hi", max0)
-        if (hi <= lo) { lo = min0; hi = max0 }
-        value = (if (persistValue) sp.getFloat("sl_$key", def) else def).coerceIn(lo, hi)
+        if (choices == null) {
+            lo = sp.getFloat("sl_${key}_lo", min0)
+            hi = sp.getFloat("sl_${key}_hi", max0)
+            if (hi <= lo) { lo = min0; hi = max0 }
+        }
+        val v = if (persistValue) sp.getFloat("sl_$key", def) else def
+        value = if (choices != null) (choices.minByOrNull { abs(it - v) } ?: def) else v.coerceIn(lo, hi)
     }
 
     fun save(ed: SharedPreferences.Editor) {
         if (persistValue) ed.putFloat("sl_$key", value)
-        ed.putFloat("sl_${key}_lo", lo)
-        ed.putFloat("sl_${key}_hi", hi)
+        if (choices == null) {
+            ed.putFloat("sl_${key}_lo", lo)
+            ed.putFloat("sl_${key}_hi", hi)
+        }
     }
 }
 
@@ -90,7 +123,17 @@ object Settings {
         private set
     var touchRing by mutableStateOf(false)
         private set
+    var autoScroll by mutableStateOf(true)
+        private set
+    var runIcons by mutableStateOf(true)
+        private set
+    var help by mutableStateOf(false)
+        private set
+    var track by mutableStateOf(false)
+        private set
     var lang by mutableStateOf(Lang.FR)
+        private set
+    var logo by mutableIntStateOf(0)
         private set
 
     // Colonnes des tours
@@ -101,6 +144,10 @@ object Settings {
     var colLap by mutableStateOf(true)
         private set
     var colDelta by mutableStateOf(true)
+        private set
+    var colPace by mutableStateOf(false)
+        private set
+    var showAvg by mutableStateOf(true)
         private set
 
     // ---- Curseurs (valeur + plage lo..hi, 100 pas)
@@ -119,13 +166,27 @@ object Settings {
     val vibe = SliderState("vibe", S.VIBE, 0f, 100f, 100f)
     val autoStop = SliderState("autoStop", S.AUTO_STOP, 0f, 1440f, 0f, curve = 2)
     val snake = SliderState("snake", S.SNAKE, 1f, 100f, 12.5f)
+    val ringEv = SliderState("ringEv", S.RING_EV, 1f, 20f, 1f, stepProvider = { 1f })
     val colR = SliderState("colR", S.RED, 0f, 255f, 52f)
     val colG = SliderState("colG", S.GREEN, 0f, 255f, 211f)
     val colB = SliderState("colB", S.BLUE, 0f, 255f, 153f)
+    // QR
+    val qrVer = SliderState("qrVer", S.QR_VERSION, 5f, 25f, 15f, stepProvider = { 1f })
+    val qrEc = SliderState("qrEc", S.QR_EC, 0f, 3f, 1f, stepProvider = { 1f })
+    // Suivi avancé
+    val precision = SliderState(
+        "precision", S.TRACK_PRECISION, 0.1f, 1000f, 1f,
+        choices = listOf(0.1f, 0.2f, 0.5f, 1f, 2f, 5f, 10f, 20f, 50f, 100f, 200f, 500f, 1000f)
+    )
+    val distance = SliderState("distance", S.TRACK_DIST, 0f, 10000f, 0f, stepProvider = { precision.value })
+    val exTime = SliderState("exTime", S.EX_TIME, 0f, 3600f, 0f, stepProvider = { 1f })
+    val nbRep = SliderState("nbRep", S.EX_REPS, 1f, 100f, 1f, stepProvider = { 1f })
+    val restTime = SliderState("restTime", S.REST_TIME, 0f, 3600f, 0f, stepProvider = { 1f })
 
     val sliders: List<SliderState> = listOf(
         ecoBright, autoUnlock, chrono, btn, lap, gapTimeBtn, btnGap, gapBtnLap, lineGap,
-        topPctS, lapWidth, hold, vibe, autoStop, snake, colR, colG, colB
+        topPctS, lapWidth, hold, vibe, autoStop, snake, ringEv, colR, colG, colB,
+        qrVer, qrEc, precision, distance, exTime, nbRep, restTime
     )
     val byKey: Map<String, SliderState> = sliders.associateBy { it.key }
 
@@ -145,6 +206,10 @@ object Settings {
     val holdMs: Long get() = (hold.value * 1000f).roundToInt().toLong()
     val autoUnlockMin: Int get() = autoUnlock.value.roundToInt()
     val autoStopMin: Int get() = autoStop.value.roundToInt()
+    val ringEventsPerLine: Int get() = ringEv.value.roundToInt().coerceAtLeast(1)
+    val qrVersion: Int get() = qrVer.value.roundToInt().coerceIn(5, 25)
+    val qrLevel: Int get() = qrEc.value.roundToInt().coerceIn(0, 3)
+    val distanceM: Float get() = distance.value
     val rgb: Int
         get() = ((colR.value.roundToInt() and 255) shl 16) or
             ((colG.value.roundToInt() and 255) shl 8) or
@@ -152,6 +217,8 @@ object Settings {
 
     val ringActive: Boolean get() = ring && !eco
     val aodActive: Boolean get() = aod && !eco
+    /** La colonne Allure n'existe que si le suivi avancé est actif et qu'une distance est réglée. */
+    val paceActive: Boolean get() = colPace && track && distance.value > 0f
 
     private var loaded = false
     private fun p(c: Context) = c.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -172,11 +239,18 @@ object Settings {
         custom = s.getBoolean("custom", false)
         light = s.getBoolean("light", false)
         touchRing = s.getBoolean("touchRing", false)
+        autoScroll = s.getBoolean("autoScroll", true)
+        runIcons = s.getBoolean("runIcons", true)
+        help = s.getBoolean("help", false)
+        track = s.getBoolean("track", false)
         lang = when (s.getString("lang", "fr")) { "en" -> Lang.EN; "zh" -> Lang.ZH; else -> Lang.FR }
+        logo = s.getInt("logo", 0).coerceIn(0, 11)
         colNum = s.getBoolean("col0", true)
         colTotal = s.getBoolean("col1", true)
         colLap = s.getBoolean("col2", true)
         colDelta = s.getBoolean("col3", true)
+        colPace = s.getBoolean("col4", false)
+        showAvg = s.getBoolean("showAvg", true)
         sliders.forEach { it.load(s) }
     }
 
@@ -196,20 +270,36 @@ object Settings {
     fun setCustom(c: Context, v: Boolean) { custom = v; p(c).edit().putBoolean("custom", v).apply() }
     fun setLight(c: Context, v: Boolean) { light = v; p(c).edit().putBoolean("light", v).apply() }
     fun setTouchRing(c: Context, v: Boolean) { touchRing = v; p(c).edit().putBoolean("touchRing", v).apply() }
+    fun setAutoScroll(c: Context, v: Boolean) { autoScroll = v; p(c).edit().putBoolean("autoScroll", v).apply() }
+    fun setRunIcons(c: Context, v: Boolean) { runIcons = v; p(c).edit().putBoolean("runIcons", v).apply() }
+    fun setHelp(c: Context, v: Boolean) { help = v; p(c).edit().putBoolean("help", v).apply() }
+    fun setTrack(c: Context, v: Boolean) {
+        track = v
+        p(c).edit().putBoolean("track", v).apply()
+        if (v) Segments.schedule(c) else Segments.cancel(c)
+    }
     fun setLang(c: Context, l: Lang) {
         lang = l
         p(c).edit().putString("lang", when (l) { Lang.EN -> "en"; Lang.ZH -> "zh"; else -> "fr" }).apply()
-        Launcher.apply(c, l)     // le nom de l'icône suit la langue
+    }
+    /** Change le logo : icône de l'appli (alias de lancement), tile, complication et notification. */
+    fun setLogo(c: Context, i: Int) {
+        logo = i.coerceIn(0, 11)
+        p(c).edit().putInt("logo", logo).apply()
+        Launcher.apply(c, logo)
+        Launcher.refresh(c)
     }
     fun setCol(c: Context, idx: Int, v: Boolean) {
         when (idx) {
             0 -> colNum = v
             1 -> colTotal = v
             2 -> colLap = v
-            else -> colDelta = v
+            3 -> colDelta = v
+            else -> colPace = v
         }
         p(c).edit().putBoolean("col$idx", v).apply()
     }
+    fun setShowAvg(c: Context, v: Boolean) { showAvg = v; p(c).edit().putBoolean("showAvg", v).apply() }
 
     /** Écrit toutes les valeurs et plages des curseurs (appelé au relâchement d'un curseur). */
     fun persistSliders(c: Context) {
@@ -223,11 +313,12 @@ object Settings {
         listOf(chrono, btn, lap, gapTimeBtn, btnGap, gapBtnLap, lineGap, topPctS, lapWidth).forEach {
             it.resetRange(); it.resetValue()
         }
-        colNum = true; colTotal = true; colLap = true; colDelta = true
+        colNum = true; colTotal = true; colLap = true; colDelta = true; colPace = false; showAvg = true
         fade = false
         p(c).edit()
             .putBoolean("col0", true).putBoolean("col1", true)
             .putBoolean("col2", true).putBoolean("col3", true)
+            .putBoolean("col4", false).putBoolean("showAvg", true)
             .putBoolean("fade", false)
             .apply()
         persistSliders(c)

@@ -36,7 +36,7 @@ class StopwatchTileService : TileService() {
         }
 
         val tile = Tile.Builder()
-            .setResourcesVersion("2")
+            .setResourcesVersion("3-${Settings.logo}")
             .setFreshnessIntervalMillis(if (Stopwatch.running) (if (Settings.eco) 5000L else 1000L) else 0L)
             .setTileTimeline(Timeline.fromLayoutElement(layout()))
             .build()
@@ -46,14 +46,15 @@ class StopwatchTileService : TileService() {
     override fun onTileResourcesRequest(
         requestParams: RequestBuilders.ResourcesRequest
     ): ListenableFuture<Resources> {
+        Settings.load(this)
         val img = ResourceBuilders.ImageResource.Builder()
             .setAndroidResourceByResId(
                 ResourceBuilders.AndroidImageResourceByResId.Builder()
-                    .setResourceId(R.drawable.ic_stopwatch)
+                    .setResourceId(Logos.glyph[Settings.logo])
                     .build()
             )
             .build()
-        val res = Resources.Builder().setVersion("2").addIdToImageMapping("ic", img).build()
+        val res = Resources.Builder().setVersion("3-${Settings.logo}").addIdToImageMapping("ic", img).build()
         return CallbackToFutureAdapter.getFuture<Resources> { c -> c.set(res); "res" }
     }
 
@@ -124,6 +125,11 @@ class StopwatchTileService : TileService() {
                     .setResourceId("ic")
                     .setWidth(dp(22f))
                     .setHeight(dp(22f))
+                    .setColorFilter(
+                        LayoutElementBuilders.ColorFilter.Builder()
+                            .setTint(argb(if (eco) 0xFFFFFFFF else pal.accent.argbLong()))
+                            .build()
+                    )
                     .build()
             )
             .addContent(text(fmtMain(Stopwatch.elapsed()), 38f, 0xFFFFFFFF))

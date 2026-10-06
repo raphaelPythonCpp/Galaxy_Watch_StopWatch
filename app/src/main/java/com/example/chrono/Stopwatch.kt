@@ -76,6 +76,7 @@ object Stopwatch {
         }
         checkForcedStop(c)
         enforceAutoStop(c)
+        if (running) Segments.schedule(c)
     }
 
     // ------------------------------------------------------------ arrêt forcé / arrêt automatique
@@ -134,6 +135,7 @@ object Stopwatch {
             save(c, true)
             Ongoing.hide(c)
             cancelAutoStop(c)
+            Segments.cancel(c)
             buzz(c, true)
         }
     }
@@ -219,6 +221,7 @@ object Stopwatch {
         buzz(c, true); save(c, true)
         Ongoing.show(c, startedAt - accumulated)
         scheduleAutoStop(c)
+        Segments.schedule(c)
     }
 
     fun stop(c: Context) {
@@ -227,6 +230,7 @@ object Stopwatch {
         buzz(c, true); save(c, true)
         Ongoing.hide(c)
         cancelAutoStop(c)
+        Segments.cancel(c)
     }
 
     fun lap(c: Context) {
@@ -272,11 +276,35 @@ object Stopwatch {
         save(c, true)
         Ongoing.hide(c)
         cancelAutoStop(c)
+        Segments.cancel(c)
     }
 
     fun toggle(c: Context) { if (running) stop(c) else start(c) }
     /** Bouton physique : tour si en marche, sinon start. */
     fun primary(c: Context) { if (running) lap(c) else start(c) }
+
+    /** Frontière de segment : 0 = fin d'exercice (2 impulsions), 1 = début de repos (1 longue), 2 = fin de repos (3 courtes). */
+    fun buzzSegment(c: Context, type: Int) {
+        try {
+            Settings.load(c)
+            val pct = Settings.vibePct
+            if (pct <= 0.05f) return
+            val v = c.getSystemService(Vibrator::class.java) ?: return
+            fun amp(base: Int) = (base * pct / 100f).roundToInt().coerceIn(1, 255)
+            val effect = if (Settings.eco) {
+                VibrationEffect.createOneShot(if (type == 1) 300L else 100L, amp(200))
+            } else when (type) {
+                1 -> VibrationEffect.createOneShot(450L, amp(255))
+                2 -> VibrationEffect.createWaveform(
+                    longArrayOf(0, 90, 60, 90, 60, 90), intArrayOf(0, amp(255), 0, amp(255), 0, amp(255)), -1
+                )
+                else -> VibrationEffect.createWaveform(
+                    longArrayOf(0, 120, 80, 120), intArrayOf(0, amp(255), 0, amp(255)), -1
+                )
+            }
+            v.vibrate(effect)
+        } catch (e: Exception) { }
+    }
 
     /** strong = start/stop/reset ; sinon tour. Intensité globale réglable (0 = aucune vibration). */
     fun buzz(c: Context, strong: Boolean) {
