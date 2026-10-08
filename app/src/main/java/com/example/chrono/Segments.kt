@@ -9,7 +9,7 @@ import kotlin.math.roundToInt
 /**
  * Cycle d'exercice : [exercice] x nbRep, puis [repos], puis on recommence.
  * Temps d'exercice = 0 -> pas d'objectif (aucune vibration). Les segments suivent le temps du chrono.
- * Une alarme exacte « réveil » est posée à chaque frontière : la vibration marche écran éteint, sans service permanent.
+ * Une alarme exacte « réveil » est posée à chaque frontière (si les vibrations d'objectifs sont activées) : la vibration marche écran éteint, sans service permanent.
  */
 object Segments {
     private fun exMs() = Settings.exTime.value.roundToInt() * 1000L
@@ -65,7 +65,7 @@ object Segments {
     /** (Re)pose l'alarme de la prochaine frontière, si le chrono tourne et qu'un objectif est réglé. */
     fun schedule(c: Context) {
         cancel(c)
-        if (!enabled() || !Stopwatch.running) return
+        if (!enabled() || !Settings.trackVibe || !Stopwatch.running) return
         try {
             val app = c.applicationContext
             val e = Stopwatch.elapsed() + 50L          // marge : jamais deux fois la même frontière

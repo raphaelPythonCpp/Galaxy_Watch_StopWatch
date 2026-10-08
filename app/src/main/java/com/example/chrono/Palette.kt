@@ -34,6 +34,9 @@ fun lapColor(v: Long, vMin: Long, vMax: Long, eco: Boolean, pal: Palette): Color
     if (eco) Fg
     else pal.gradient(if (vMax > vMin) (v - vMin).toFloat() / (vMax - vMin) else 0f)
 
-/** 1 = meilleur (▲), -1 = pire (▼), 0 = aucun */
-fun lapMarker(v: Long, vMin: Long, vMax: Long, count: Int): Int =
-    if (count >= 2 && vMax > vMin) (if (v == vMin) 1 else if (v == vMax) -1 else 0) else 0
+/**
+ * Triangle d'un tour par rapport à sa référence : 1 = plus rapide (▲), -1 = plus lent (▼),
+ * 0 = identique ou pas de référence (premier tour, première série).
+ */
+fun relMarker(v: Long, ref: Long?): Int =
+    if (ref == null || v == ref) 0 else if (v < ref) 1 else -1

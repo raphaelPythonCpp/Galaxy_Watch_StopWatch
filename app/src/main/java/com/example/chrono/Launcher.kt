@@ -6,15 +6,15 @@ import android.content.pm.PackageManager
 import androidx.wear.tiles.TileService
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 
-/** L'icône de l'appli = l'alias de lancement actif (un seul sur 12). Le nom reste « Super StopWatch ». */
+/** L'icône de l'appli = l'alias de lancement actif (un seul sur 10). Le nom reste « Super StopWatch ». */
 object Launcher {
     fun apply(c: Context, index: Int) {
         try {
             val pm = c.packageManager
-            for (i in 0 until 12) {
+            for (i in 0 until Logos.count) {
                 if (i == index) set(pm, i, true)
             }
-            for (i in 0 until 12) {
+            for (i in 0 until Logos.count) {
                 if (i != index) set(pm, i, false)
             }
         } catch (e: Exception) { }

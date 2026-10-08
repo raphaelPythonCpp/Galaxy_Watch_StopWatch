@@ -24,16 +24,21 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.ambient.AmbientLifecycleObserver
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private var lastWake = 0L
@@ -44,6 +49,8 @@ class MainActivity : ComponentActivity() {
         Settings.load(this)
         History.load(this)
         Ui.ambient = false
+        Ui.soft = false
+        Ui.lastInput = SystemClock.uptimeMillis()
         Ui.locked = false          // jamais verrouillé au (re)démarrage de l'appli
         Ui.hold = 0f
         Ui.warn = -1
@@ -78,12 +85,14 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         lastWake = SystemClock.uptimeMillis()
+        Ui.wake()
         checkAutoUnlock()
         Stopwatch.enforceAutoStop(this)
     }
 
     override fun onStop() {
         Ui.hold = 0f
+        Stopwatch.markSeen(this)
         super.onStop()
     }
 
@@ -116,13 +125,17 @@ class MainActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_BACK) true else super.onKeyUp(keyCode, event)
 
     private fun handleButton() {
+        val wasSoft = Ui.soft
+        Ui.wake()                                   // note l'interaction ; sort de la veille douce
+        if (wasSoft) return                         // veille douce : le premier appui réveille seulement
         if (Ui.warn >= 0) { Ui.warn = -1; return }
         if (Ui.screen != Screen.MAIN) {
-            // retour : codes QR -> séance, séance -> historique, sous-menu -> son écran d'origine, le reste -> principal
+            // retour : codes QR -> séance, séance -> historique, sous-menus -> leur écran d'origine, le reste -> principal
             Ui.screen = when (Ui.screen) {
                 Screen.QR -> Screen.SESSION
                 Screen.SESSION -> Screen.HISTORY
                 Screen.RANGE -> Ui.rangeFrom
+                Screen.INFO -> Ui.infoFrom
                 else -> Screen.MAIN
             }
             return
@@ -137,9 +150,6 @@ class MainActivity : ComponentActivity() {
 }
 
 private class LapStats(val min: Long, val max: Long, val avg: Long)
-
-/** Compteur d'événements de la bague rotative (1 ligne tous les N événements, dans le même sens). */
-private class RotState { var count = 0; var dir = 0f }
 
 private val LightColors = Colors(
     background = Color.White,
@@ -197,16 +207,39 @@ fun App() {
         }
     }
 
-    // Luminosité du mode éco
-    LaunchedEffect(eco, Settings.ecoBrightness) {
+    // Affichage permanent (logiciel) : l'écran reste allumé tant que le chrono tourne ou affiche un temps. Après le délai
+    // réglé sans interaction, veille douce : noir, chiffres gris, luminosité minimale (un toucher ou le bouton réveille).
+    val keepOn = Settings.aodActive && (running || acc > 0L)
+    LaunchedEffect(keepOn) {
+        val w = (ctx as? Activity)?.window
+        if (keepOn) w?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else w?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (keepOn) Ui.lastInput = SystemClock.uptimeMillis()
+        else if (Ui.soft) { Ui.soft = false; Ui.ambient = false }
+        while (keepOn) {
+            delay(1000)
+            if (!Ui.ambient && SystemClock.uptimeMillis() - Ui.lastInput >= Settings.aodDelayMs) {
+                Ui.soft = true
+                Ui.ambient = true
+            }
+        }
+    }
+
+    // Luminosité : minimale en veille douce ; réglée en mode éco ; sinon celle du système
+    val dimmed = Ui.ambient && Ui.soft
+    LaunchedEffect(eco, Settings.ecoBrightness, dimmed) {
         (ctx as? Activity)?.window?.let { w ->
             val lp = w.attributes
             lp.screenBrightness =
-                if (eco) (Settings.ecoBrightness / 100f).coerceAtLeast(0.01f)
+                if (dimmed) 0.01f
+                else if (eco) (Settings.ecoBrightness / 100f).coerceAtLeast(0.01f)
                 else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
             w.attributes = lp
         }
     }
+
+    // Retour à l'écran principal : les positions de défilement mémorisées des réglages sont oubliées
+    LaunchedEffect(Ui.screen) { if (Ui.screen == Screen.MAIN) Ui.savedPos.clear() }
 
     // Statistiques recalculées seulement quand la liste des tours change
     val laps = Stopwatch.laps
@@ -246,9 +279,9 @@ fun App() {
         }
     }
 
-    // Bague rotative native (tactile Samsung) : exactement 1 ligne par déclenchement
+    // Bague rotative native (tactile Samsung) : exactement 1 ligne par cran
     val focus = remember { FocusRequester() }
-    val rot = remember { RotState() }
+    val step = Settings.seriesLen
     val lineStepPx = with(LocalDensity.current) { (Settings.textSp * 0.8f).sp.toPx() + lineGap.toPx() }
     LaunchedEffect(Ui.screen, ambient) {
         try { focus.requestFocus() } catch (e: Exception) { }
@@ -257,18 +290,20 @@ fun App() {
     MaterialTheme(colors = if (Settings.light) LightColors else Colors()) {
         Box(
             Modifier.fillMaxSize().background(Bg)
-                .circularScroll(
-                    active = { Ui.screen == Screen.MAIN && !Ui.ambient },
-                    scrollEnabled = {
-                        Settings.touchRing && (!Ui.locked || Settings.ringInLock)
-                    },
-                    onLines = { n -> listState.dispatchRawDelta(n * lineStepPx) }
-                )
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                            Ui.lastInput = SystemClock.uptimeMillis()
+                        }
+                    }
+                }
         ) {
             when {
                 ambient -> AmbientScreen(now)
                 Ui.screen == Screen.SETTINGS -> SettingsScreen()
                 Ui.screen == Screen.RANGE -> RangeScreen()
+                Ui.screen == Screen.INFO -> InfoScreen()
                 Ui.screen == Screen.TRACK -> TrackScreen()
                 Ui.screen == Screen.HELP -> HelpScreen()
                 Ui.screen == Screen.HISTORY -> HistoryScreen()
@@ -286,16 +321,9 @@ fun App() {
                         Modifier.fillMaxSize()
                             .onRotaryScrollEvent { e ->
                                 if (!Ui.locked || Settings.ringInLock) {
+                                    Ui.lastInput = SystemClock.uptimeMillis()
                                     val d = e.verticalScrollPixels
-                                    val dir = if (d > 0f) 1f else if (d < 0f) -1f else 0f
-                                    if (dir != 0f) {
-                                        if (dir != rot.dir) { rot.count = 0; rot.dir = dir }
-                                        rot.count++
-                                        if (rot.count >= Settings.ringEventsPerLine) {
-                                            rot.count = 0
-                                            listState.dispatchRawDelta(dir * lineStepPx)   // 1 ligne, pas plus
-                                        }
-                                    }
+                                    if (d != 0f) listState.dispatchRawDelta((if (d > 0f) 1f else -1f) * lineStepPx)   // 1 ligne, pas plus
                                     true
                                 } else false
                             }
@@ -340,11 +368,12 @@ fun App() {
                                         }
                                     }
                                     itemsIndexed(laps) { i, lap ->
+                                        // ▲▼ : comparaison avec le tour précédent (ou le tour de même rang de la série précédente)
+                                        val marker = if (Settings.showMarkers) relMarker(lap.lapTime, laps.getOrNull(i + step)?.lapTime) else 0
                                         LapRow(
                                             lap, laps.getOrNull(i + 1)?.lapTime,
                                             lapColor(lap.lapTime, stats.min, stats.max, eco, pal),
-                                            lapMarker(lap.lapTime, stats.min, stats.max, laps.size),
-                                            Settings.textSp, cols, availW
+                                            marker, Settings.textSp, cols, availW
                                         )
                                     }
                                 }
@@ -388,15 +417,18 @@ fun App() {
             // Progression des appuis longs (Reset, effacement, cadenas, sous-menus, mise en page par défaut)
             HoldRing(accent)
 
-            // Avertissement avant d'activer le mode clair (0) ou l'always-on display (1)
+            // Avertissement avant d'activer le mode clair (0) ou l'always-on display (1), ou de désactiver « Réglages en activité » (2)
             if (Ui.warn >= 0) {
                 WarnDialog(
                     Ui.warn, accent,
                     onOk = {
-                        if (Ui.warn == 0) Settings.setLight(ctx, true)
-                        else {
-                            Settings.setAod(ctx, true)
-                            (ctx as? Activity)?.recreate()
+                        when (Ui.warn) {
+                            0 -> Settings.setLight(ctx, true)
+                            1 -> {
+                                Settings.setAod(ctx, true)
+                                (ctx as? Activity)?.recreate()
+                            }
+                            else -> Settings.setRunIcons(ctx, false)
                         }
                         Ui.warn = -1
                     },
@@ -417,6 +449,17 @@ fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, 
     val startBg = if (eco) Fg else pal.accent
     val startFg = if (eco) Bg else pal.onAccent
     val stopBg = if (eco) OffTrack else pal.inverseDark
+
+    // Espace sous la ligne de base des chiffres (rapporté à la taille de police), mesuré une fois :
+    // 0 % d'écart = le bas des chiffres touche le haut des cercles ; une valeur négative les fait se chevaucher.
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val padRatio = remember(density) {
+        val r = measurer.measure("0", tight(100f).copy(fontSize = 100.sp, fontWeight = FontWeight.Medium))
+        ((r.size.height - r.lastBaseline) / with(density) { 100.sp.toPx() }).coerceAtLeast(0f)
+    }
+    val over1h by remember(now) { derivedStateOf { now.longValue >= 3_600_000L } }
+    val gapPct = Settings.gapTimeBtnPct
 
     val undo: @Composable () -> Unit = {
         RoundButton(S.UNDO.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp, hasLaps) { Stopwatch.undoLap(ctx) }
@@ -441,8 +484,15 @@ fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, 
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         TimeText(now, eco)
-        Spacer(Modifier.height((Settings.gapTimeBtnPct / 100f * hDp).dp))
-        Row(horizontalArrangement = Arrangement.spacedBy((Settings.btnGapPct / 100f * hDp).dp)) {
+        Row(
+            Modifier.layout { m, c ->
+                val p = m.measure(c)
+                val big = if (!Settings.secMode && over1h) Settings.chronoSp * 0.79f else Settings.chronoSp
+                val g = (gapPct / 100f * hDp).dp.roundToPx() - (padRatio * big.sp.toPx()).roundToInt()
+                layout(p.width, maxOf(0, p.height + g)) { p.place(0, g) }
+            },
+            horizontalArrangement = Arrangement.spacedBy((Settings.btnGapPct / 100f * hDp).dp)
+        ) {
             for (b in shown) b()
         }
     }

@@ -20,14 +20,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.itemsIndexed
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -38,20 +42,33 @@ import kotlin.math.sqrt
 private fun fmtDate(ts: Long): String =
     SimpleDateFormat("dd/MM HH:mm", Locale.FRANCE).format(Date(ts))
 
-private fun fmtMinutes(m: Int, zero: String): String = when {
-    m <= 0 -> zero
-    m < 60 -> "$m min"
-    else -> "${m / 60} h" + (if (m % 60 != 0) " %02d".format(m % 60) else "")
+/**
+ * État de défilement mémorisé par écran : en revenant d'un sous-menu (plage min/max, explication),
+ * la liste retrouve exactement sa place. La mémoire est vidée au retour à l'écran principal.
+ */
+@Composable
+private fun rememberSavedListState(screen: Screen): ScalingLazyListState {
+    val saved = Ui.savedPos[screen]
+    val st = rememberScalingLazyListState(
+        initialCenterItemIndex = saved?.first ?: 1,
+        initialCenterItemScrollOffset = saved?.second ?: 0
+    )
+    DisposableEffect(Unit) {
+        onDispose {
+            try { Ui.savedPos[screen] = st.centerItemIndex to st.centerItemScrollOffset } catch (e: Exception) { }
+        }
+    }
+    return st
 }
 
 @Composable
-fun LogoBox(i: Int, selected: Boolean, accent: Color, onClick: () -> Unit) {
+fun LogoBox(i: Int, selected: Boolean, accent: Color, modifier: Modifier, onClick: () -> Unit) {
     Image(
         painter = painterResource(Logos.launcher[i]),
         contentDescription = null,
-        modifier = Modifier.size(38.dp).clip(CircleShape)
+        modifier = modifier.aspectRatio(1f).clip(CircleShape)
             .border(if (selected) 2.dp else 0.dp, if (selected) accent else Color.Transparent, CircleShape)
-            .clickable(onClick = onClick)
+            .tapOrHold(onTap = onClick, onHold = { Ui.openInfo("logo") })
     )
 }
 
@@ -63,18 +80,19 @@ fun SettingsScreen() {
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
     val accent = if (eco) Fg else pal.accent
     val onAcc = if (eco) Bg else pal.onAccent
+    val listState = rememberSavedListState(Screen.SETTINGS)
     // Au moins une colonne doit rester affichée (Allure et Moyenne sont des plus)
     val colToggle: (Int, Boolean) -> Unit = { idx, v ->
         val count = listOf(Settings.colNum, Settings.colTotal, Settings.colLap, Settings.colDelta).count { it }
         if (idx == 4 || v || count > 1) Settings.setCol(ctx, idx, v)
     }
 
-    ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+    ScalingLazyColumn(Modifier.fillMaxSize(), state = listState, horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text(S.SETTINGS.t(), fontSize = 14.sp, color = Dim) }
 
         // ---------------- Essentiels : toujours affichés
         item {
-            ToggleRow(S.ECO.t(), eco, true, accent) {
+            ToggleRow(S.ECO.t(), eco, true, accent, "eco") {
                 Settings.setEco(ctx, it)
                 act?.recreate()
             }
@@ -82,7 +100,7 @@ fun SettingsScreen() {
         if (eco) {
             item { SliderRow(Settings.ecoBright, accent, unit = " %") }
         }
-        item { SliderRow(Settings.hold, accent, unit = " s") }
+        item { SliderRow(Settings.hold, accent) }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(S.COLOR.t(), fontSize = 13.sp, color = Dim)
@@ -93,90 +111,97 @@ fun SettingsScreen() {
         item { SliderRow(Settings.colR, Color(0xFFEF4444), !eco) }
         item { SliderRow(Settings.colG, Color(0xFF22C55E), !eco) }
         item { SliderRow(Settings.colB, Color(0xFF3B82F6), !eco) }
-        item { ToggleRow(S.RING.t(), Settings.ringActive, !eco, accent) { Settings.setRing(ctx, it) } }
-        item { ToggleRow(S.LOCK.t(), Settings.lock, true, accent) { Settings.setLock(ctx, it) } }
+        item { ToggleRow(S.LOCK.t(), Settings.lock, true, accent, "lock") { Settings.setLock(ctx, it) } }
         if (Settings.lock) {
             item {
                 SliderRow(Settings.autoUnlock, accent,
-                    fmt = { v -> fmtMinutes(v.roundToInt(), S.NEVER.t()) })
+                    fmt = { v -> if (v < 0.5f) S.NEVER.t() else fmtDur((v * 60f).roundToInt()) })
             }
             item {
-                ToggleRow(S.RING_IN_LOCK.t(), Settings.ringInLock, true, accent) { Settings.setRingInLock(ctx, it) }
+                ToggleRow(S.RING_IN_LOCK.t(), Settings.ringInLock, true, accent, "ringInLock") { Settings.setRingInLock(ctx, it) }
             }
         }
         item {
-            ToggleRow(S.AOD.t(), Settings.aodActive, !eco, accent) { v ->
+            ToggleRow(S.AOD.t(), Settings.aodActive, !eco, accent, "aod") { v ->
                 if (v) Ui.warn = 1                       // avertissement avant activation
                 else { Settings.setAod(ctx, false); act?.recreate() }
             }
         }
-        item { ToggleRow(S.CUSTOM.t(), Settings.custom, true, accent) { Settings.setCustom(ctx, it) } }
+        if (Settings.aodActive) {
+            item { SliderRow(Settings.aodDelay, accent) }
+        }
+        item {
+            ToggleRow(S.RUN_ICONS.t(), Settings.runIcons, true, accent, "runIcons") { v ->
+                if (v) Settings.setRunIcons(ctx, true)
+                else Ui.warn = 2                         // avertissement avant désactivation
+            }
+        }
+        item { ToggleRow(S.HELP_TOGGLE.t(), Settings.help, true, accent, "help") { Settings.setHelp(ctx, it) } }
+        item { ToggleRow(S.TRACK.t(), Settings.track, true, accent, "track") { Settings.setTrack(ctx, it) } }
+        item { ToggleRow(S.CUSTOM.t(), Settings.custom, true, accent, "custom") { Settings.setCustom(ctx, it) } }
 
         // ---------------- Personnalisation : tout le reste
         if (Settings.custom) {
             item { Text(S.LANGUAGE.t(), fontSize = 13.sp, color = Dim) }
             item {
                 Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HalfToggle("Français", Settings.lang == Lang.FR, accent, onAcc, Modifier.weight(1f), 11f) {
+                    HalfToggle("Français", Settings.lang == Lang.FR, accent, onAcc, Modifier.weight(1f), 11f, "lang") {
                         Settings.setLang(ctx, Lang.FR)
                     }
-                    HalfToggle("English", Settings.lang == Lang.EN, accent, onAcc, Modifier.weight(1f), 11f) {
+                    HalfToggle("English", Settings.lang == Lang.EN, accent, onAcc, Modifier.weight(1f), 11f, "lang") {
                         Settings.setLang(ctx, Lang.EN)
                     }
-                    HalfToggle("中文", Settings.lang == Lang.ZH, accent, onAcc, Modifier.weight(1f), 11f) {
+                    HalfToggle("中文", Settings.lang == Lang.ZH, accent, onAcc, Modifier.weight(1f), 11f, "lang") {
                         Settings.setLang(ctx, Lang.ZH)
                     }
                 }
             }
 
             item { Text(S.LOGO.t(), fontSize = 13.sp, color = Dim) }
-            for (row in 0 until 3) {
+            for (row in 0 until 2) {
                 item {
-                    Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.SpaceBetween) {
-                        for (col in 0 until 4) {
-                            val i = row * 4 + col
-                            LogoBox(i, Settings.logo == i, accent) { Settings.setLogo(ctx, i) }
+                    Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for (col in 0 until 5) {
+                            val i = row * 5 + col
+                            LogoBox(i, Settings.logo == i, accent, Modifier.weight(1f)) { Settings.setLogo(ctx, i) }
                         }
                     }
                 }
             }
 
             item {
-                ToggleRow(S.LIGHT.t(), Settings.light, true, accent) { v ->
+                ToggleRow(S.LIGHT.t(), Settings.light, true, accent, "light") { v ->
                     if (v) Ui.warn = 0                   // avertissement avant activation
                     else Settings.setLight(ctx, false)
                 }
             }
+            item { ToggleRow(S.RING.t(), Settings.ringActive, !eco, accent, "ring") { Settings.setRing(ctx, it) } }
             item { SliderRow(Settings.snake, accent, !eco, " %") }
-            item { ToggleRow(S.TOUCH_RING.t(), Settings.touchRing, true, accent) { Settings.setTouchRing(ctx, it) } }
-            item { SliderRow(Settings.ringEv, accent) }
-            item { ToggleRow(S.AUTO_SCROLL.t(), Settings.autoScroll, true, accent) { Settings.setAutoScroll(ctx, it) } }
-            item { ToggleRow(S.RUN_ICONS.t(), Settings.runIcons, true, accent) { Settings.setRunIcons(ctx, it) } }
-            item { ToggleRow(S.HELP_TOGGLE.t(), Settings.help, true, accent) { Settings.setHelp(ctx, it) } }
-            item { ToggleRow(S.TRACK.t(), Settings.track, true, accent) { Settings.setTrack(ctx, it) } }
-            item { ToggleRow(S.LEFTY.t(), Settings.lefty, true, accent) { Settings.setLefty(ctx, it) } }
-            item { ToggleRow(S.UNDO_BTN.t(), Settings.undoBtn, true, accent) { Settings.setUndoBtn(ctx, it) } }
-            item { ToggleRow(S.SECONDS.t(), Settings.secMode, true, accent) { Settings.setSecMode(ctx, it) } }
-            item { ToggleRow(S.FADE.t(), Settings.fade, true, accent) { Settings.setFade(ctx, it) } }
+            item { ToggleRow(S.AUTO_SCROLL.t(), Settings.autoScroll, true, accent, "autoScroll") { Settings.setAutoScroll(ctx, it) } }
+            item { ToggleRow(S.LEFTY.t(), Settings.lefty, true, accent, "lefty") { Settings.setLefty(ctx, it) } }
+            item { ToggleRow(S.UNDO_BTN.t(), Settings.undoBtn, true, accent, "undo") { Settings.setUndoBtn(ctx, it) } }
+            item { ToggleRow(S.SECONDS.t(), Settings.secMode, true, accent, "sec") { Settings.setSecMode(ctx, it) } }
+            item { ToggleRow(S.FADE.t(), Settings.fade, true, accent, "fade") { Settings.setFade(ctx, it) } }
+            item { ToggleRow(S.MARKERS.t(), Settings.showMarkers, true, accent, "markers") { Settings.setShowMarkers(ctx, it) } }
 
             // Colonnes : 2 - 2 - 2 (la moyenne est le dernier choix)
             item { Text(S.COLS.t(), fontSize = 13.sp, color = Dim) }
             item {
                 Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HalfToggle(S.COL_NUM.t(), Settings.colNum, accent, onAcc, Modifier.weight(1f)) { colToggle(0, it) }
-                    HalfToggle(S.COL_TOTAL.t(), Settings.colTotal, accent, onAcc, Modifier.weight(1f)) { colToggle(1, it) }
+                    HalfToggle(S.COL_NUM.t(), Settings.colNum, accent, onAcc, Modifier.weight(1f), info = "colNum") { colToggle(0, it) }
+                    HalfToggle(S.COL_TOTAL.t(), Settings.colTotal, accent, onAcc, Modifier.weight(1f), info = "colTotal") { colToggle(1, it) }
                 }
             }
             item {
                 Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HalfToggle(S.COL_LAP.t(), Settings.colLap, accent, onAcc, Modifier.weight(1f)) { colToggle(2, it) }
-                    HalfToggle(S.COL_DELTA.t(), Settings.colDelta, accent, onAcc, Modifier.weight(1f)) { colToggle(3, it) }
+                    HalfToggle(S.COL_LAP.t(), Settings.colLap, accent, onAcc, Modifier.weight(1f), info = "colLap") { colToggle(2, it) }
+                    HalfToggle(S.COL_DELTA.t(), Settings.colDelta, accent, onAcc, Modifier.weight(1f), info = "colDelta") { colToggle(3, it) }
                 }
             }
             item {
                 Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HalfToggle(S.COL_PACE.t(), Settings.colPace, accent, onAcc, Modifier.weight(1f)) { colToggle(4, it) }
-                    HalfToggle(S.AVG.t(), Settings.showAvg, accent, onAcc, Modifier.weight(1f)) { Settings.setShowAvg(ctx, it) }
+                    HalfToggle(S.COL_PACE.t(), Settings.colPace, accent, onAcc, Modifier.weight(1f), info = "colPace") { colToggle(4, it) }
+                    HalfToggle(S.AVG.t(), Settings.showAvg, accent, onAcc, Modifier.weight(1f), info = "showAvg") { Settings.setShowAvg(ctx, it) }
                 }
             }
 
@@ -235,21 +260,21 @@ fun SettingsScreen() {
             }
             item {
                 SliderRow(Settings.autoStop, accent,
-                    fmt = { v -> fmtMinutes(v.roundToInt(), S.OFF.t()) })
+                    fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur((v * 60f).roundToInt()) })
             }
         }
 
         // ---------------- À propos
         item {
             Column(Modifier.padding(top = 10.dp, bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Super StopWatch  v10", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
+                Text("Super StopWatch  v11", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
                 Text(S.ABOUT_BY.t(), fontSize = 9.sp, color = Dim, textAlign = TextAlign.Center)
             }
         }
     }
 }
 
-/** Sous-menu d'un curseur : plage min / max (bornes d'origine larges, 100 pas, min < max). */
+/** Sous-menu d'un curseur : explication, puis plage min / max (bornes d'origine larges, 100 pas, min < max). */
 @Composable
 fun RangeScreen() {
     val ctx = LocalContext.current
@@ -257,6 +282,7 @@ fun RangeScreen() {
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
     val accent = if (eco) Fg else pal.accent
     val spec = Settings.byKey[Ui.rangeKey]
+    val info = Info.byKey[Ui.rangeKey]
 
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         if (spec == null) {
@@ -264,16 +290,24 @@ fun RangeScreen() {
         } else {
             val step0 = spec.gap0
             val span = spec.max0 - spec.min0
-            item { Text(spec.label.t(), fontSize = 14.sp, color = Dim) }
+            item {
+                Text(spec.label.t(), fontSize = 14.sp, color = accent, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            }
+            if (info != null) {
+                info.body().split("\n").filter { it.isNotBlank() }.forEach { line ->
+                    item { Text(line, fontSize = 11.sp, color = Fg, modifier = Modifier.fillMaxWidth(0.88f)) }
+                }
+            }
             item {
                 Text(
-                    S.RANGE.t() + " : " + spec.text(spec.lo, step0) + " – " + spec.text(spec.hi, step0),
-                    fontSize = 11.sp, color = Dim
+                    S.RANGE.t() + " : " + spec.display(spec.lo, step0) + " – " + spec.display(spec.hi, step0),
+                    fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp)
                 )
             }
             item {
                 SliderBar(
-                    S.MIN.t(), spec.text(spec.lo, step0), (spec.lo - spec.min0) / span, accent, true,
+                    S.MIN.t(), spec.display(spec.lo, step0), (spec.lo - spec.min0) / span, accent, true,
                     { Settings.persistSliders(ctx) }, null
                 ) { f ->
                     val n = (f * 100f).roundToInt()
@@ -283,7 +317,7 @@ fun RangeScreen() {
             }
             item {
                 SliderBar(
-                    S.MAX.t(), spec.text(spec.hi, step0), (spec.hi - spec.min0) / span, accent, true,
+                    S.MAX.t(), spec.display(spec.hi, step0), (spec.hi - spec.min0) / span, accent, true,
                     { Settings.persistSliders(ctx) }, null
                 ) { f ->
                     val n = (f * 100f).roundToInt()
@@ -304,6 +338,28 @@ fun RangeScreen() {
     }
 }
 
+/** Explication d'un réglage (appui long sur un interrupteur, une case ou un curseur à valeurs discrètes). */
+@Composable
+fun InfoScreen() {
+    val eco = Settings.eco
+    val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
+    val accent = if (eco) Fg else pal.accent
+    val info = Info.byKey[Ui.infoKey]
+
+    ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (info == null) {
+            item { Text(S.NOT_FOUND.t(), fontSize = 12.sp, color = Dim) }
+        } else {
+            item {
+                Text(info.title.t(), fontSize = 14.sp, color = accent, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            }
+            info.body().split("\n").filter { it.isNotBlank() }.forEach { line ->
+                item { Text(line, fontSize = 11.sp, color = Fg, modifier = Modifier.fillMaxWidth(0.88f)) }
+            }
+        }
+    }
+}
+
 /** Suivi avancé : distance par tour (allure) + objectif d'exercice / repos. Accessible pendant l'activité. */
 @Composable
 fun TrackScreen() {
@@ -312,32 +368,45 @@ fun TrackScreen() {
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
     val accent = if (eco) Fg else pal.accent
     val resched: () -> Unit = { Segments.schedule(ctx) }
+    val listState = rememberSavedListState(Screen.TRACK)
 
-    ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+    ScalingLazyColumn(Modifier.fillMaxSize(), state = listState, horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text(S.TRACK.t(), fontSize = 14.sp, color = Dim) }
         item { SliderRow(Settings.precision, accent, unit = " m") }
         item { SliderRow(Settings.distance, accent, unit = " m") }
         item {
             SliderRow(
                 Settings.exTime, accent,
-                fmt = { v -> if (v < 0.5f) S.OFF.t() else Settings.exTime.text(v) + " s" },
+                fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur(v.roundToInt()) },
                 onRelease = resched
             )
         }
         item { SliderRow(Settings.nbRep, accent, unit = " ×", onRelease = resched) }
-        item { SliderRow(Settings.restTime, accent, unit = " s", onRelease = resched) }
+        item { SliderRow(Settings.restTime, accent, onRelease = resched) }
+        item { ToggleRow(S.TRACK_VIBE.t(), Settings.trackVibe, true, accent, "trackVibe") { Settings.setTrackVibe(ctx, it) } }
     }
 }
 
+/** Aide complète : sections à titres en gras (couleur de référence), texte découpé en courtes lignes. */
 @Composable
 fun HelpScreen() {
+    val eco = Settings.eco
+    val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
+    val accent = if (eco) Fg else pal.accent
+
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Text(S.HELP_TITLE.t(), fontSize = 14.sp, color = Dim) }
-        item {
-            Text(
-                S.HELP_TEXT.t(), fontSize = 11.sp, color = Fg,
-                modifier = Modifier.fillMaxWidth(0.88f)
-            )
+        item { Text(S.HELP_TITLE.t(), fontSize = 16.sp, color = accent, fontWeight = FontWeight.Bold) }
+        HELP_SECTIONS.forEach { (title, body) ->
+            item { Spacer(Modifier.height(6.dp)) }
+            item {
+                Text(
+                    title.t(), fontSize = 13.sp, color = accent, fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(0.9f)
+                )
+            }
+            body.t().split("\n").filter { it.isNotBlank() }.forEach { line ->
+                item { Text(line, fontSize = 11.sp, color = Fg, modifier = Modifier.fillMaxWidth(0.88f)) }
+            }
         }
     }
 }
@@ -351,21 +420,31 @@ fun HistoryScreen() {
             item { Text(S.NO_SESSION.t(), fontSize = 12.sp, color = Dim) }
         }
         itemsIndexed(History.sessions) { i, s ->
-            // Appui : ouvre la séance ; maintien : supprime cette séance (nom = date et heure automatiques)
-            Column(
+            // Glisser vers la droite : ouvre la séance ; maintenir : supprime cette séance (nom = date et heure)
+            var dx by remember { mutableFloatStateOf(0f) }
+            Row(
                 Modifier.fillMaxWidth(0.92f)
+                    .swipeOrHold(
+                        onSwipe = { Ui.sessionIndex = i; Ui.screen = Screen.SESSION },
+                        onHold = { History.delete(ctx, i) },
+                        onDrag = { dx = it }
+                    )
+                    .graphicsLayer { translationX = dx }
                     .clip(RoundedCornerShape(18.dp))
                     .background(SurfaceBtn)
-                    .clickable { Ui.sessionIndex = i; Ui.screen = Screen.SESSION }
-                    .holdToConfirm { History.delete(ctx, i) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(fmtDate(s.ts), fontSize = 12.sp, color = Fg)
-                Text(
-                    fmtFull(s.total) + " · " + s.laps.size + " " +
-                        (if (s.laps.size > 1) S.LAP_MANY.t() else S.LAP_ONE.t()),
-                    fontSize = 11.sp, color = Dim
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(fmtDate(s.ts), fontSize = 12.sp, color = Fg)
+                    Text(
+                        fmtFull(s.total) + " · " + s.laps.size + " " +
+                            (if (s.laps.size > 1) S.LAP_MANY.t() else S.LAP_ONE.t()),
+                        fontSize = 11.sp, color = Dim
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                ChevronGlyph()
             }
         }
         item {
@@ -445,6 +524,7 @@ fun SessionScreen() {
     val cols = rememberLapCols(rows, false, Settings.textSp)
     val vMin = rows.minOfOrNull { it.lapTime } ?: 0L
     val vMax = rows.maxOfOrNull { it.lapTime } ?: 0L
+    val step = Settings.seriesLen
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -462,11 +542,12 @@ fun SessionScreen() {
                 item { Text(S.NO_LAP.t(), fontSize = 12.sp, color = Dim) }
             }
             lazyItemsIndexed(rows) { i, lap ->
+                // ▲▼ : comparaison avec le tour précédent (ou le tour de même rang de la série précédente)
+                val marker = if (Settings.showMarkers) relMarker(lap.lapTime, rows.getOrNull(i - step)?.lapTime) else 0
                 LapRow(
                     lap, rows.getOrNull(i - 1)?.lapTime,
                     lapColor(lap.lapTime, vMin, vMax, eco, pal),
-                    lapMarker(lap.lapTime, vMin, vMax, rows.size),
-                    Settings.textSp, cols, availW
+                    marker, Settings.textSp, cols, availW
                 )
             }
             item {

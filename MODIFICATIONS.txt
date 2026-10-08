@@ -1,0 +1,50 @@
+MODIFICATIONS DE LA v11 (réalisées) — Super StopWatch
+========================================================
+
+Logos
+- 10 logos : les 2 « clock » de la v10 (logo_01 chrono vert, logo_02 cadran bleu) + les 8 de apercu_logos (n°3 à 10),
+  vectorisés tels quels. Grille 5 × 2 dans la Personnalisation. Alias de lancement 11 et 12 supprimés.
+
+Affichage
+- Tous les curseurs de temps : « 45 s », « 12 min 05 s », « 1 h 05 min » (réglages, sous-menu min/max, suivi avancé).
+- Écart chrono -> cercles : de -10 % à 100 %, et 0 % = le bas des chiffres touche le haut des cercles.
+- Triangles ▲▼ optionnels (Personnalisation, activés par défaut) : à chaque tour, ▲ plus rapide / ▼ plus lent que le tour
+  précédent ; en suivi avancé (objectif d'exercice réglé) que le tour de même rang de la série précédente
+  (une série = nombre de répétitions). Même logique dans la page d'une séance.
+
+Historique
+- Glisser une séance vers la droite = l'ouvrir ; maintenir = la supprimer (cause du bug : le maintien masquait l'appui).
+
+Aide et explications
+- Aide longue, par rubriques à titres gras, en 3 langues.
+- Appui long sur n'importe quel réglage (interrupteur, case, logo, curseur) = explication dans la langue choisie ;
+  pour les curseurs, elle est au-dessus des curseurs min / max.
+- Retour au même endroit de la liste après un sous-menu (réglages et suivi avancé).
+
+Réglages
+- Permutés : « Cercle » passe en Personnalisation ; « Réglages en activité », « Aide » et « Suivi avancé » passent en Essentiels.
+- Avertissement quand on DÉSACTIVE « Réglages en activité ».
+- Supprimés : bague tactile de secours et « événements par ligne » (1 ligne par cran de bague, natif).
+- Suivi avancé : interrupteur « Vibrations des objectifs » (vibration identique à celle d'un tour, repos compris).
+
+Always-on display
+- L'écran reste allumé tant que le chrono tourne ou affiche un temps (FLAG_KEEP_SCREEN_ON, aucune permission),
+  puis veille douce après « Délai avant veille » (2 s à 5 min, 10 s par défaut) : noir, chiffres gris, luminosité minimale.
+  Un toucher ou le bouton du bas réveille (sans déclencher de tour).
+
+Fermeture / Forcer l'arrêt
+- Sentinelle (alarme lointaine retenant un PendingIntent, annulée par « Forcer l'arrêt ») + journal de sortie du système
+  (fermeture depuis les applis récentes) => stop + reset au prochain lancement (appli, tile, complication) ; séance enregistrée.
+- Un redémarrage de la montre ne remet pas le chrono à zéro ; quitter l'appli non plus.
+
+Version
+- v11 : versionCode 11, workflow GitHub, README, PROJET_POUR_IA.
+
+À vérifier sur la montre
+- Glissement vers la droite dans l'historique (geste « retour » du système).
+- Reset après « Forcer l'arrêt » et après fermeture depuis les applis récentes.
+- Veille douce de l'affichage permanent ; contact chrono / cercles à 0 %.
+
+--------------------------------------------------------
+MODIFICATIONS À APPORTER POUR LA v12 :
+-

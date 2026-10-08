@@ -20,12 +20,23 @@ class AutoStopReceiver : BroadcastReceiver() {
     }
 }
 
-/** Frontière d'un segment (exercice / repos) : vibration propre à chaque type, puis alarme suivante. */
+/** Frontière d'un segment (exercice / repos) : vibration comme pour un tour (si activée), puis alarme suivante. */
 class SegmentReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Stopwatch.load(context)
         if (!Stopwatch.running || !Segments.enabled()) return
-        Stopwatch.buzzSegment(context, intent.getIntExtra("type", 0))
+        if (Settings.trackVibe) Stopwatch.buzz(context, false)   // vibration identique à celle d'un tour
         Segments.schedule(context)
+    }
+}
+
+/**
+ * Sentinelle « arrêt forcé » : l'alarme qui la retient est lointaine et ne sonne en pratique jamais ;
+ * si elle sonne, on charge l'état (ce qui vérifie l'arrêt forcé) et on la repose.
+ */
+class SentinelReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        Stopwatch.load(context)
+        if (Stopwatch.running) Stopwatch.armSentinel(context)
     }
 }

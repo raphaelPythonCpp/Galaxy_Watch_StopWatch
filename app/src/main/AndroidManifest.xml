@@ -21,7 +21,7 @@
             android:launchMode="singleTask"
             android:enableOnBackInvokedCallback="false" />
 
-        <!-- 12 logos : un seul alias actif à la fois ; le nom reste « Super StopWatch » dans toutes les langues -->
+        <!-- 10 logos : un seul alias actif à la fois ; le nom reste « Super StopWatch » dans toutes les langues -->
         <activity-alias
             android:name=".Logo01"
             android:targetActivity=".MainActivity"
@@ -142,34 +142,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias
-            android:name=".Logo11"
-            android:targetActivity=".MainActivity"
-            android:label="Super StopWatch"
-            android:icon="@drawable/logo_11"
-            android:enabled="false"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".Logo12"
-            android:targetActivity=".MainActivity"
-            android:label="Super StopWatch"
-            android:icon="@drawable/logo_12"
-            android:enabled="false"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
 
         <receiver android:name=".StopResetReceiver" android:exported="false" />
         <receiver android:name=".AutoStopReceiver" android:exported="false" />
         <receiver android:name=".SegmentReceiver" android:exported="false" />
+        <receiver android:name=".SentinelReceiver" android:exported="false" />
 
         <service
             android:name=".StopwatchTileService"

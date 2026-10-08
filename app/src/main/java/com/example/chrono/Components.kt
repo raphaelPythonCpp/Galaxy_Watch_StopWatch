@@ -33,6 +33,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ScrollAxisRange
+import androidx.compose.ui.semantics.horizontalScrollAxisRange
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -70,19 +73,36 @@ val OffTrack: Color get() = g(Color(0xFF3A3F47))
 val RingTrack: Color get() = g(Color(0xFF0E1218))
 val Tnum = TextStyle(fontFeatureSettings = "tnum")
 
-enum class Screen { MAIN, SETTINGS, RANGE, TRACK, HELP, HISTORY, SESSION, QR }
+enum class Screen { MAIN, SETTINGS, RANGE, INFO, TRACK, HELP, HISTORY, SESSION, QR }
 
 object Ui {
     var screen by mutableStateOf(Screen.MAIN)
     var sessionIndex by mutableIntStateOf(0)
     var rangeKey by mutableStateOf("")
     var rangeFrom by mutableStateOf(Screen.SETTINGS)
-    /** Avertissement en attente : -1 = aucun, 0 = mode clair, 1 = always-on display. */
+    var infoKey by mutableStateOf("")
+    var infoFrom by mutableStateOf(Screen.SETTINGS)
+    /** Avertissement en attente : -1 = aucun, 0 = mode clair, 1 = always-on display, 2 = « Réglages en activité » à désactiver. */
     var warn by mutableIntStateOf(-1)
+    /** Écran ambiant : système (observateur Wear) ou veille douce de l'affichage permanent (soft = true). */
     var ambient by mutableStateOf(false)
+    var soft by mutableStateOf(false)
     var locked by mutableStateOf(false)
     var lockedAt = 0L
     var hold by mutableFloatStateOf(0f)
+    /** Dernière interaction (tactile, bague, bouton) : sert à la veille douce. Valeur simple : pas de recomposition. */
+    @Volatile var lastInput = 0L
+    /** Position de défilement mémorisée par écran (index central, décalage), pour retrouver sa place au retour d'un sous-menu. */
+    val savedPos = HashMap<Screen, Pair<Int, Int>>()
+
+    fun openRange(key: String) { rangeFrom = screen; rangeKey = key; screen = Screen.RANGE }
+    fun openInfo(key: String) { infoFrom = screen; infoKey = key; screen = Screen.INFO }
+
+    /** Sortie de la veille douce. */
+    fun wake() {
+        lastInput = SystemClock.uptimeMillis()
+        if (soft) { soft = false; ambient = false }
+    }
 }
 
 // ---------------------------------------------------------------- bague
@@ -187,7 +207,11 @@ fun TimeText(now: MutableLongState, eco: Boolean) {
 /** Always-on display : noir et gris fixes (un fond clair abîmerait l'écran AMOLED). */
 @Composable
 fun AmbientScreen(now: MutableLongState) {
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black)
+            .pointerInput(Unit) { detectTapGestures(onPress = { Ui.wake() }) },   // veille douce : le premier toucher réveille seulement
+        contentAlignment = Alignment.Center
+    ) {
         Text(fmtMain(now.longValue), fontSize = 44.sp, color = Color(0xFFB0B0B0), style = Tnum)
     }
 }
@@ -255,6 +279,16 @@ fun QrGlyph(color: Color) {
         drawRect(color, Offset(u * 0.4f, u * 4.4f), Size(u * 2.2f, u * 2.2f), style = st)
         drawRect(color, Offset(u * 4.6f, u * 4.6f), Size(u * 1.1f, u * 1.1f))
         drawRect(color, Offset(u * 3.2f, u * 3.2f), Size(u * 0.9f, u * 0.9f))
+    }
+}
+
+/** Petite flèche « › » : indique qu'une carte s'ouvre en la glissant vers la droite. */
+@Composable
+fun ChevronGlyph() {
+    Canvas(Modifier.size(7.dp, 12.dp)) {
+        val w = 1.6.dp.toPx()
+        drawLine(Dim, Offset(0f, 0f), Offset(size.width, size.height / 2f), w, StrokeCap.Round)
+        drawLine(Dim, Offset(size.width, size.height / 2f), Offset(0f, size.height), w, StrokeCap.Round)
     }
 }
 
@@ -352,55 +386,115 @@ fun HoldButton(label: String, dim: Dp, bg: Color, fg: Color, fs: TextUnit, onDon
     ) { Text(label, fontSize = fs, color = fg) }
 }
 
-// ---------------------------------------------------------------- bague tactile de secours
+// ---------------------------------------------------------------- appui bref / appui long / glissement
 
 /**
- * Bande extérieure de l'écran : un mouvement circulaire (> 8°) y est toujours capté (il ne fait pas défiler la liste
- * au doigt, pour éviter un doublon avec la bague tactile du système). Si scrollEnabled : ~15° = 1 ligne.
- * Un simple appui n'est jamais intercepté.
+ * Appui bref = onTap ; appui long (temps de maintien réglé, avec cercle de progression et vibration) = onHold.
+ * Après un appui long réussi, le relâchement n'est pas compté comme un appui bref.
  */
 @Composable
-fun Modifier.circularScroll(active: () -> Boolean, scrollEnabled: () -> Boolean, onLines: (Int) -> Unit): Modifier {
-    val act by rememberUpdatedState(active)
-    val sc by rememberUpdatedState(scrollEnabled)
-    val cb by rememberUpdatedState(onLines)
+fun Modifier.tapOrHold(onTap: () -> Unit, onHold: () -> Unit): Modifier {
+    val ctx = LocalContext.current
+    val tap by rememberUpdatedState(onTap)
+    val hold by rememberUpdatedState(onHold)
     return this.pointerInput(Unit) {
-        awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val r = minOf(cx, cy)
-            val d0 = hypot(down.position.x - cx, down.position.y - cy)
-            if (!act() || d0 < r * 0.78f) return@awaitEachGesture
-            var last = atan2(down.position.y - cy, down.position.x - cx)
-            var accTotal = 0f
-            var acc = 0f
-            var captured = false
-            while (true) {
-                val ev = awaitPointerEvent(PointerEventPass.Initial)
-                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                if (!ch.pressed) break
-                val a = atan2(ch.position.y - cy, ch.position.x - cx)
-                var da = Math.toDegrees((a - last).toDouble()).toFloat()
-                if (da > 180f) da -= 360f
-                if (da < -180f) da += 360f
-                last = a
-                accTotal += da
-                acc += da
-                if (!captured && abs(accTotal) > 8f) captured = true
-                if (captured) {
-                    ev.changes.forEach { it.consume() }
-                    if (sc()) {
-                        val lines = (acc / 15f).toInt()
-                        if (lines != 0) {
-                            cb(lines)
-                            acc -= lines * 15f
+        var held = false
+        detectTapGestures(
+            onPress = {
+                held = false
+                coroutineScope {
+                    val job = launch {
+                        val t0 = SystemClock.uptimeMillis()
+                        while (true) {
+                            delay(16)
+                            val p = (SystemClock.uptimeMillis() - t0).toFloat() / Settings.holdMs.coerceAtLeast(50L)
+                            Ui.hold = p.coerceAtMost(1f)
+                            if (p >= 1f) {
+                                Ui.hold = 0f
+                                held = true
+                                Stopwatch.buzz(ctx, true)
+                                hold()
+                                break
+                            }
+                        }
+                    }
+                    tryAwaitRelease()
+                    job.cancel()
+                    Ui.hold = 0f
+                }
+            },
+            onTap = { if (!held) tap() }
+        )
+    }
+}
+
+/**
+ * Carte de l'historique : glisser vers la droite = onSwipe (ouvrir) ; maintenir sans bouger = onHold (supprimer).
+ * onDrag reçoit le décalage horizontal (px, 0 si abandon) pour déplacer la carte sous le doigt.
+ * Un mouvement vertical ou vers la gauche annule : le défilement de la liste n'est pas gêné.
+ * La sémantique « défilable horizontalement » évite que le geste « retour » du système n'intercepte le glissement.
+ */
+@Composable
+fun Modifier.swipeOrHold(onSwipe: () -> Unit, onHold: () -> Unit, onDrag: (Float) -> Unit): Modifier {
+    val ctx = LocalContext.current
+    val swipe by rememberUpdatedState(onSwipe)
+    val hold by rememberUpdatedState(onHold)
+    val drag by rememberUpdatedState(onDrag)
+    return this
+        .semantics { horizontalScrollAxisRange = ScrollAxisRange(value = { 0.5f }, maxValue = { 1f }) }
+        .pointerInput(Unit) {
+            coroutineScope {
+                var t0 = -1L                       // début de l'appui qui compte pour l'appui long (-1 = aucun)
+                launch {
+                    while (true) {
+                        delay(16)
+                        if (t0 >= 0L) {
+                            val p = (SystemClock.uptimeMillis() - t0).toFloat() / Settings.holdMs.coerceAtLeast(50L)
+                            Ui.hold = p.coerceAtMost(1f)
+                            if (p >= 1f) {
+                                t0 = -1L
+                                Ui.hold = 0f
+                                Stopwatch.buzz(ctx, true)
+                                hold()
+                            }
                         }
                     }
                 }
+                val slop = viewConfiguration.touchSlop
+                val need = 44.dp.toPx()
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    t0 = SystemClock.uptimeMillis()
+                    var state = 0                  // 0 = appui en cours, 1 = glissement vers la droite, 2 = abandonné
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!ch.pressed) break
+                        val dx = ch.position.x - down.position.x
+                        val dy = ch.position.y - down.position.y
+                        if (state == 0) {
+                            if (abs(dy) > slop && abs(dy) > abs(dx)) state = 2
+                            else if (dx < -slop) state = 2
+                            else if (dx > slop && dx > abs(dy)) state = 1
+                            if (state != 0) { t0 = -1L; Ui.hold = 0f }
+                        }
+                        if (state == 1) {
+                            ch.consume()
+                            drag(dx.coerceIn(0f, need))
+                            if (dx >= need) {
+                                state = 2
+                                drag(0f)
+                                swipe()
+                                break
+                            }
+                        }
+                    }
+                    t0 = -1L
+                    Ui.hold = 0f
+                    drag(0f)
+                }
             }
         }
-    }
 }
 
 // ---------------------------------------------------------------- réglages
@@ -421,15 +515,18 @@ fun Pill(checked: Boolean, accent: Color) {
     }
 }
 
-/** [texte] [espace] [slider on/off] */
+/** [texte] [espace] [slider on/off]. Appui = bascule ; appui long = explication du réglage (info = clé de Info). */
 @Composable
-fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, accent: Color, onChange: (Boolean) -> Unit) {
+fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, accent: Color, info: String? = null, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth(0.92f)
             .alpha(if (enabled) 1f else 0.4f)
             .clip(RoundedCornerShape(20.dp))
             .background(RowBg)
-            .clickable(enabled = enabled) { onChange(!checked) }
+            .tapOrHold(
+                onTap = { if (enabled) onChange(!checked) },
+                onHold = { if (info != null) Ui.openInfo(info) }
+            )
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -442,7 +539,7 @@ private fun snap(f: Float): Float = if (f < 0.03f) 0f else if (f > 0.97f) 1f els
 
 /**
  * Barre de curseur générique : fraction 0..1, onChange pendant le glissement, onFinish au relâchement.
- * onLong (optionnel) : appui long (temps de maintien) sans bouger -> sous-menu min/max.
+ * onLong (optionnel) : appui long (temps de maintien) sans bouger -> explication + sous-menu min/max.
  */
 @Composable
 fun SliderBar(
@@ -453,7 +550,7 @@ fun SliderBar(
         .alpha(if (enabled) 1f else 0.4f)
         .clip(RoundedCornerShape(20.dp))
         .background(RowBg)
-    val holdable = if (onLong != null && enabled) base.holdToConfirm { onLong() } else base
+    val holdable = if (onLong != null) base.holdToConfirm { onLong() } else base
     Column(holdable.padding(horizontal = 14.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, fontSize = 13.sp, color = Fg, modifier = Modifier.weight(1f))
@@ -489,7 +586,7 @@ fun SliderBar(
     }
 }
 
-/** Curseur lié à un SliderState (100 pas entre lo et hi). Appui long -> sous-menu min/max. */
+/** Curseur lié à un SliderState (100 pas entre lo et hi). Appui long -> explication + plage min/max (explication seule si valeurs discrètes). */
 @Composable
 fun SliderRow(
     spec: SliderState, accent: Color, enabled: Boolean = true, unit: String = "",
@@ -498,14 +595,12 @@ fun SliderRow(
     val ctx = LocalContext.current
     SliderBar(
         label = spec.label.t(),
-        valueText = fmt?.invoke(spec.value) ?: (spec.text() + unit),
+        valueText = fmt?.invoke(spec.value) ?: (spec.display() + (if (spec.kind == 0) unit else "")),
         fraction = spec.fraction(),
         fill = accent,
         enabled = enabled,
         onFinish = { Settings.persistSliders(ctx); onRelease() },
-        onLong = if (spec.choices == null) {
-            { Ui.rangeFrom = Ui.screen; Ui.rangeKey = spec.key; Ui.screen = Screen.RANGE }
-        } else null,
+        onLong = if (spec.choices == null) { { Ui.openRange(spec.key) } } else { { Ui.openInfo(spec.key) } },
         onChange = { f -> spec.setFromFraction(f) }
     )
 }
@@ -613,16 +708,16 @@ fun LapRow(lap: Lap, prevLapTime: Long?, color: Color, marker: Int, sz: Float, c
     }
 }
 
-/** Case à bascule en demi-ligne (deux ou trois par ligne). */
+/** Case à bascule en demi-ligne (deux ou trois par ligne). Appui long = explication (info = clé de Info). */
 @Composable
 fun HalfToggle(
     label: String, checked: Boolean, accent: Color, onAccent: Color, modifier: Modifier,
-    fontSp: Float = 12f, onChange: (Boolean) -> Unit
+    fontSp: Float = 12f, info: String? = null, onChange: (Boolean) -> Unit
 ) {
     Box(
         modifier.clip(RoundedCornerShape(16.dp))
             .background(if (checked) accent else RowBg)
-            .clickable { onChange(!checked) }
+            .tapOrHold(onTap = { onChange(!checked) }, onHold = { if (info != null) Ui.openInfo(info) })
             .padding(vertical = 9.dp),
         contentAlignment = Alignment.Center
     ) { Text(label, fontSize = fontSp.sp, color = if (checked) onAccent else Dim) }
@@ -631,6 +726,7 @@ fun HalfToggle(
 /** Fenêtre d'avertissement : texte et symbole ⚠️ dans la couleur de référence. */
 @Composable
 fun WarnDialog(kind: Int, accent: Color, onOk: () -> Unit, onCancel: () -> Unit) {
+    val okLabel = if (kind == 2) S.WARN_DISABLE.t() else S.WARN_OK.t()
     Box(
         Modifier.fillMaxSize().background(Color(0xE6000000)).pointerInput(Unit) { detectTapGestures { } },
         contentAlignment = Alignment.Center
@@ -642,13 +738,13 @@ fun WarnDialog(kind: Int, accent: Color, onOk: () -> Unit, onCancel: () -> Unit)
             Text("⚠️ " + S.WARN_TITLE.t(), fontSize = 14.sp, color = accent, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text(
-                if (kind == 0) S.WARN_LIGHT.t() else S.WARN_AOD.t(),
+                when (kind) { 0 -> S.WARN_LIGHT.t(); 1 -> S.WARN_AOD.t(); else -> S.WARN_RUNICONS.t() },
                 fontSize = 11.sp, color = accent, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HalfToggle(S.WARN_CANCEL.t(), false, accent, Bg, Modifier.width(70.dp)) { onCancel() }
-                HalfToggle(S.WARN_OK.t(), true, accent, if (accent.luminance() > 0.5f) Color.Black else Color.White, Modifier.width(70.dp)) { onOk() }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HalfToggle(S.WARN_CANCEL.t(), false, accent, Bg, Modifier.weight(1f), 11f) { onCancel() }
+                HalfToggle(okLabel, true, accent, if (accent.luminance() > 0.5f) Color.Black else Color.White, Modifier.weight(1f), 11f) { onOk() }
             }
         }
     }

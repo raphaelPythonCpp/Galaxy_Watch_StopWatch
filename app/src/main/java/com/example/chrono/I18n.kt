@@ -23,7 +23,6 @@ enum class S(val fr: String, val en: String, val zh: String) {
     LANGUAGE("Langue", "Language", "语言"),
     LIGHT("Mode clair", "Light mode", "浅色模式"),
     SNAKE("Taille du snake", "Snake size", "光带长度"),
-    TOUCH_RING("Bague tactile (secours)", "Touch bezel (backup)", "触摸转环（备用）"),
     LEFTY("Mode gaucher", "Left-handed", "左手模式"),
     UNDO_BTN("Bouton annuler tour", "Undo-lap button", "撤销按钮"),
     SECONDS("Temps en secondes", "Time in seconds", "以秒显示"),
@@ -77,7 +76,9 @@ enum class S(val fr: String, val en: String, val zh: String) {
     COMP_DESC("Chronomètre", "Stopwatch", "秒表"),
 
     LOGO("Logo", "Logo", "图标"),
-    RING_EV("Événements par ligne", "Events per line", "每行事件数"),
+    AOD_DELAY("Délai avant veille", "Dim delay", "息屏延迟"),
+    MARKERS("Triangles ▲▼", "Triangles ▲▼", "三角标记 ▲▼"),
+    TRACK_VIBE("Vibrations des objectifs", "Goal vibrations", "目标振动"),
     AUTO_SCROLL("Défilement auto", "Auto-scroll", "自动滚动"),
     RUN_ICONS("Réglages en activité", "Settings while running", "运行中显示设置"),
     HELP_TOGGLE("Aide", "Help", "帮助"),
@@ -105,18 +106,19 @@ enum class S(val fr: String, val en: String, val zh: String) {
         "浅色模式会点亮大量像素：可能造成AMOLED屏幕烧屏和老化，并大幅增加耗电。"
     ),
     WARN_AOD(
-        "L'affichage permanent garde une image fixe allumée : risque de marquage de l'écran, et batterie consommée plus vite.",
-        "Always-on display keeps a static image lit: risk of screen burn-in and faster battery drain.",
-        "息屏显示会持续点亮静态画面：可能造成烧屏，并增加耗电。"
+        "L'écran reste allumé tant que le chrono tourne (veille douce : noir, chiffres gris, luminosité minimale). Risque de marquage de l'écran AMOLED, et batterie consommée plus vite.",
+        "The screen stays on while the timer runs (soft dim: black, gray digits, minimum brightness). Risk of AMOLED burn-in and faster battery drain.",
+        "秒表运行期间屏幕将保持常亮（柔和待机：黑底灰字、最低亮度）。可能造成 AMOLED 烧屏，并加快耗电。"
     ),
+    WARN_RUNICONS(
+        "Sans cette option, les réglages et le suivi sont masqués dès que le chrono tourne ou affiche un temps supérieur à 0. Un paramètre mal réglé (verrou, taille, couleur…) ne pourra plus être corrigé avant la remise à zéro : l'appli peut sembler bloquée.",
+        "Without this option, settings and tracking icons are hidden as soon as the timer runs or shows a time above 0. A badly set parameter (lock, size, color…) can't be fixed until you reset: the app may seem stuck.",
+        "关闭后，只要秒表在运行或显示的时间大于 0，设置和跟踪图标就会隐藏。若某项参数设置不当（锁定、大小、颜色等），在重置之前无法修改，应用可能看起来卡住。"
+    ),
+    WARN_DISABLE("Désactiver", "Disable", "关闭"),
     WARN_OK("Activer", "Enable", "启用"),
     WARN_CANCEL("Annuler", "Cancel", "取消"),
     HELP_TITLE("Aide", "Help", "帮助"),
-    HELP_TEXT(
-        "• Tour / Start : cercles ou bouton du bas\n• Reset, effacer, cadenas : maintenir\n• Curseur : appui long = plage min/max\n• Tours : bague rotative\n• Icône réglages : maintenir en activité",
-        "• Lap / Start: buttons or bottom key\n• Reset, clear, padlock: hold\n• Slider: long press = min/max range\n• Laps: rotary bezel\n• Settings icon: hold while running",
-        "• 计圈/开始：按钮或下方按键\n• 重置、清除、锁：长按\n• 滑块：长按=设置范围\n• 圈次：旋转表圈\n• 运行中：长按设置图标"
-    ),
     ABOUT_BY(
         "Raphaël GARIVIER avec Claude · Octobre 2026",
         "Raphaël GARIVIER with Claude · October 2026",

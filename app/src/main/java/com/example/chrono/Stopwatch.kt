@@ -79,28 +79,101 @@ object Stopwatch {
         if (running) Segments.schedule(c)
     }
 
-    // ------------------------------------------------------------ arrêt forcé / arrêt automatique
+    // ------------------------------------------------------------ arrêt forcé / fermeture de l'appli
 
     /**
-     * « Forcer l'arrêt » (Paramètres > Applications) tue le processus sans laisser l'appli réagir.
-     * Au lancement suivant, on lit le motif de fin du dernier processus : si c'était une demande de l'utilisateur
-     * alors que le chrono tournait, on fait « stop puis reset » à l'instant de l'arrêt.
+     * Quand l'appli est FERMÉE (retirée des applis récentes) ou FORCÉE À L'ARRÊT (Paramètres > Applications), le processus
+     * est tué sans que l'appli puisse réagir. Au lancement suivant (appli, tile, complication…), deux détections
+     * indépendantes décident s'il faut faire « stop puis reset » :
+     *  1. Sentinelle : tant que le chrono tourne, une alarme lointaine tient un PendingIntent. « Forcer l'arrêt » annule
+     *     alarmes et PendingIntents de l'appli ; s'il a disparu alors qu'il avait été posé, l'appli a été arrêtée de force
+     *     (sauf redémarrage de la montre, qui efface aussi les alarmes mais où le chrono continue comme avant).
+     *  2. Journal de sortie du système (ApplicationExitInfo) : fermeture demandée par l'utilisateur (applis récentes ou arrêt forcé).
+     * Un processus tué par manque de mémoire ne déclenche rien : le chrono continue, calé sur l'horloge.
      */
     private fun checkForcedStop(c: Context) {
+        val p = prefs(c)
+        var exitTs = 0L
+        var userKill = false
         try {
-            val am = c.getSystemService(ActivityManager::class.java) ?: return
-            val infos = am.getHistoricalProcessExitReasons(c.packageName, 0, 5)
-            val newest = infos.maxByOrNull { it.timestamp } ?: return
-            val p = prefs(c)
-            if (newest.timestamp <= p.getLong("exitSeen", 0L)) return
-            p.edit().putLong("exitSeen", newest.timestamp).apply()
-            if (newest.reason == ApplicationExitInfo.REASON_USER_REQUESTED &&
-                running && newest.timestamp > startedAt
-            ) {
-                stopAndReset(c, newest.timestamp, true)
+            val am = c.getSystemService(ActivityManager::class.java)
+            val newest = am?.getHistoricalProcessExitReasons(c.packageName, 0, 8)?.maxByOrNull { it.timestamp }
+            if (newest != null && newest.timestamp > p.getLong("exitSeen", 0L)) {
+                p.edit().putLong("exitSeen", newest.timestamp).apply()
+                exitTs = newest.timestamp
+                userKill = isUserKill(newest)
             }
         } catch (e: Exception) { }
+        if (!running) return
+        val savedBoot = p.getInt("boot", -2)
+        val rebooted = savedBoot != -2 && savedBoot != bootCount(c)
+        val sentinelLost = p.getBoolean("sentinel", false) && !rebooted && sentinelMissing(c)
+        val closedByUser = userKill && exitTs > startedAt
+        if (sentinelLost || closedByUser) {
+            val seen = p.getLong("seen", 0L)
+            val at = when {
+                exitTs > startedAt -> exitTs        // instant de la fermeture, donné par le système
+                seen > startedAt -> seen            // sinon, dernier passage dans l'appli
+                else -> now()
+            }
+            stopAndReset(c, at, true)
+        } else {
+            armSentinel(c)                          // (re)pose la sentinelle pour la suite
+        }
     }
+
+    /** Fermeture voulue par l'utilisateur : applis récentes (« remove task ») ou Forcer l'arrêt (« stop <paquet> »). */
+    private fun isUserKill(i: ApplicationExitInfo): Boolean {
+        if (i.reason == ApplicationExitInfo.REASON_USER_REQUESTED || i.reason == ApplicationExitInfo.REASON_USER_STOPPED) return true
+        val d = (i.description ?: "").lowercase(Locale.ROOT)
+        return d.contains("remove task") || d.startsWith("stop ") || d.contains("force stop") || d.contains("forcestop")
+    }
+
+    private fun bootCount(c: Context): Int =
+        try { android.provider.Settings.Global.getInt(c.contentResolver, android.provider.Settings.Global.BOOT_COUNT) }
+        catch (e: Exception) { -1 }
+
+    private fun sentinelIntent(app: Context) =
+        Intent(app, SentinelReceiver::class.java).setAction("com.example.chrono.SENTINEL")
+
+    private fun sentinelPi(c: Context, create: Boolean): PendingIntent? {
+        val app = c.applicationContext
+        return PendingIntent.getBroadcast(
+            app, 7, sentinelIntent(app),
+            PendingIntent.FLAG_IMMUTABLE or (if (create) PendingIntent.FLAG_UPDATE_CURRENT else PendingIntent.FLAG_NO_CREATE)
+        )
+    }
+
+    private fun sentinelMissing(c: Context): Boolean =
+        try { sentinelPi(c, false) == null } catch (e: Exception) { false }
+
+    /** Pose la sentinelle : alarme non réveillante dans ~300 jours (aucun coût de batterie), qui retient le PendingIntent. */
+    fun armSentinel(c: Context) {
+        try {
+            val pi = sentinelPi(c, true) ?: return
+            c.applicationContext.getSystemService(AlarmManager::class.java)
+                ?.set(AlarmManager.RTC, now() + 300L * 86_400_000L, pi)
+            prefs(c).edit().putBoolean("sentinel", true).putInt("boot", bootCount(c)).apply()
+        } catch (e: Exception) { }
+    }
+
+    private fun disarmSentinel(c: Context) {
+        try {
+            val pi = sentinelPi(c, false)
+            if (pi != null) {
+                c.applicationContext.getSystemService(AlarmManager::class.java)?.cancel(pi)
+                pi.cancel()
+            }
+        } catch (e: Exception) { }
+        try { prefs(c).edit().putBoolean("sentinel", false).apply() } catch (e: Exception) { }
+    }
+
+    /** Dernier passage dans l'appli (sert d'estimation de l'instant d'arrêt si le système n'en donne pas). */
+    fun markSeen(c: Context) {
+        try { prefs(c).edit().putLong("seen", now()).apply() } catch (e: Exception) { }
+    }
+
+    // ------------------------------------------------------------ arrêt automatique
 
     private fun alarmPi(c: Context): PendingIntent {
         val app = c.applicationContext
@@ -136,6 +209,7 @@ object Stopwatch {
             Ongoing.hide(c)
             cancelAutoStop(c)
             Segments.cancel(c)
+            disarmSentinel(c)
             buzz(c, true)
         }
     }
@@ -222,6 +296,8 @@ object Stopwatch {
         Ongoing.show(c, startedAt - accumulated)
         scheduleAutoStop(c)
         Segments.schedule(c)
+        armSentinel(c)
+        markSeen(c)
     }
 
     fun stop(c: Context) {
@@ -231,6 +307,7 @@ object Stopwatch {
         Ongoing.hide(c)
         cancelAutoStop(c)
         Segments.cancel(c)
+        disarmSentinel(c)
     }
 
     fun lap(c: Context) {
@@ -277,34 +354,12 @@ object Stopwatch {
         Ongoing.hide(c)
         cancelAutoStop(c)
         Segments.cancel(c)
+        disarmSentinel(c)
     }
 
     fun toggle(c: Context) { if (running) stop(c) else start(c) }
     /** Bouton physique : tour si en marche, sinon start. */
     fun primary(c: Context) { if (running) lap(c) else start(c) }
-
-    /** Frontière de segment : 0 = fin d'exercice (2 impulsions), 1 = début de repos (1 longue), 2 = fin de repos (3 courtes). */
-    fun buzzSegment(c: Context, type: Int) {
-        try {
-            Settings.load(c)
-            val pct = Settings.vibePct
-            if (pct <= 0.05f) return
-            val v = c.getSystemService(Vibrator::class.java) ?: return
-            fun amp(base: Int) = (base * pct / 100f).roundToInt().coerceIn(1, 255)
-            val effect = if (Settings.eco) {
-                VibrationEffect.createOneShot(if (type == 1) 300L else 100L, amp(200))
-            } else when (type) {
-                1 -> VibrationEffect.createOneShot(450L, amp(255))
-                2 -> VibrationEffect.createWaveform(
-                    longArrayOf(0, 90, 60, 90, 60, 90), intArrayOf(0, amp(255), 0, amp(255), 0, amp(255)), -1
-                )
-                else -> VibrationEffect.createWaveform(
-                    longArrayOf(0, 120, 80, 120), intArrayOf(0, amp(255), 0, amp(255)), -1
-                )
-            }
-            v.vibrate(effect)
-        } catch (e: Exception) { }
-    }
 
     /** strong = start/stop/reset ; sinon tour. Intensité globale réglable (0 = aucune vibration). */
     fun buzz(c: Context, strong: Boolean) {

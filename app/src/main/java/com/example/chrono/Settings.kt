@@ -12,15 +12,36 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
+/** Durée lisible : « 45 s », « 12 min 05 s », « 1 h 05 min » (au-delà d'une heure, les secondes sont omises). */
+fun fmtDur(sec: Int, zero: String = "0 s"): String {
+    val s = sec.coerceAtLeast(0)
+    return when {
+        s == 0 -> zero
+        s < 60 -> "$s s"
+        s < 3600 -> {
+            val m = s / 60
+            val r = s % 60
+            if (r == 0) "$m min" else String.format(Locale.ROOT, "%d min %02d s", m, r)
+        }
+        else -> {
+            val h = s / 3600
+            val m = (s % 3600) / 60
+            if (m == 0) "$h h" else String.format(Locale.ROOT, "%d h %02d min", h, m)
+        }
+    }
+}
+
 /**
  * Un curseur à 100 pas entre lo et hi (réglables par appui long : sous-menu min/max).
  * min0..max0 = bornes d'origine, larges, qui limitent les curseurs du sous-menu.
  * choices : valeurs discrètes (pas de sous-menu). stepProvider : pas imposé (ex. précision de la distance).
+ * kind : 0 = valeur brute, 1 = durée en secondes, 2 = durée en minutes (affichées en s / min / h).
  */
 class SliderState(
     val key: String, val label: S, val min0: Float, val max0: Float, val def: Float,
     val curve: Int = 1, val persistValue: Boolean = true,
-    val choices: List<Float>? = null, val stepProvider: (() -> Float)? = null
+    val choices: List<Float>? = null, val stepProvider: (() -> Float)? = null,
+    val kind: Int = 0
 ) {
     var value by mutableFloatStateOf(def)
     var lo by mutableFloatStateOf(min0)
@@ -78,6 +99,13 @@ class SliderState(
         return String.format(Locale.ROOT, "%.${d}f", v)
     }
 
+    /** Texte affiché : durées lisibles pour les curseurs de temps, sinon la valeur avec ses décimales. */
+    fun display(v: Float = value, step: Float = effStep): String = when (kind) {
+        1 -> if (step < 1f) text(v, step) + " s" else fmtDur(v.roundToInt())
+        2 -> fmtDur((v * 60f).roundToInt(), "0 min")
+        else -> text(v, step)
+    }
+
     fun load(sp: SharedPreferences) {
         if (choices == null) {
             lo = sp.getFloat("sl_${key}_lo", min0)
@@ -121,8 +149,6 @@ object Settings {
         private set
     var light by mutableStateOf(false)
         private set
-    var touchRing by mutableStateOf(false)
-        private set
     var autoScroll by mutableStateOf(true)
         private set
     var runIcons by mutableStateOf(true)
@@ -130,6 +156,10 @@ object Settings {
     var help by mutableStateOf(false)
         private set
     var track by mutableStateOf(false)
+        private set
+    var trackVibe by mutableStateOf(true)
+        private set
+    var showMarkers by mutableStateOf(true)
         private set
     var lang by mutableStateOf(Lang.FR)
         private set
@@ -152,21 +182,21 @@ object Settings {
 
     // ---- Curseurs (valeur + plage lo..hi, 100 pas)
     val ecoBright = SliderState("ecoBright", S.ECO_BRIGHT, 0f, 100f, 0f, persistValue = false)
-    val autoUnlock = SliderState("autoUnlock", S.AUTO_UNLOCK, 0f, 1440f, 0f, curve = 2)
+    val autoUnlock = SliderState("autoUnlock", S.AUTO_UNLOCK, 0f, 1440f, 0f, curve = 2, kind = 2)
     val chrono = SliderState("chrono", S.S_CHRONO, 10f, 90f, 38f)
     val btn = SliderState("btn", S.S_BTN, 20f, 140f, 58f)
     val lap = SliderState("lap", S.S_LAPS, 5f, 40f, 12f)
-    val gapTimeBtn = SliderState("gapTimeBtn", S.GAP_TIME_BTN, 0f, 100f, 3f)
+    val gapTimeBtn = SliderState("gapTimeBtn", S.GAP_TIME_BTN, -10f, 100f, 3f)
     val btnGap = SliderState("btnGap", S.GAP_BTN, 0f, 100f, 4f)
     val gapBtnLap = SliderState("gapBtnLap", S.GAP_BTN_LAP, 0f, 100f, 3f)
     val lineGap = SliderState("lineGap", S.GAP_LINES, 0f, 100f, 3f)
     val topPctS = SliderState("topPct", S.TOP_PCT, 0f, 100f, 60f)
     val lapWidth = SliderState("lapWidth", S.LAP_WIDTH, 40f, 100f, 90f)
-    val hold = SliderState("hold", S.HOLD, 0.1f, 10f, 2f)
+    val hold = SliderState("hold", S.HOLD, 0.1f, 10f, 2f, kind = 1)
     val vibe = SliderState("vibe", S.VIBE, 0f, 100f, 100f)
-    val autoStop = SliderState("autoStop", S.AUTO_STOP, 0f, 1440f, 0f, curve = 2)
+    val autoStop = SliderState("autoStop", S.AUTO_STOP, 0f, 1440f, 0f, curve = 2, kind = 2)
     val snake = SliderState("snake", S.SNAKE, 1f, 100f, 12.5f)
-    val ringEv = SliderState("ringEv", S.RING_EV, 1f, 20f, 1f, stepProvider = { 1f })
+    val aodDelay = SliderState("aodDelay", S.AOD_DELAY, 2f, 300f, 10f, stepProvider = { 1f }, kind = 1)
     val colR = SliderState("colR", S.RED, 0f, 255f, 52f)
     val colG = SliderState("colG", S.GREEN, 0f, 255f, 211f)
     val colB = SliderState("colB", S.BLUE, 0f, 255f, 153f)
@@ -179,13 +209,13 @@ object Settings {
         choices = listOf(0.1f, 0.2f, 0.5f, 1f, 2f, 5f, 10f, 20f, 50f, 100f, 200f, 500f, 1000f)
     )
     val distance = SliderState("distance", S.TRACK_DIST, 0f, 10000f, 0f, stepProvider = { precision.value })
-    val exTime = SliderState("exTime", S.EX_TIME, 0f, 3600f, 0f, stepProvider = { 1f })
+    val exTime = SliderState("exTime", S.EX_TIME, 0f, 3600f, 0f, stepProvider = { 1f }, kind = 1)
     val nbRep = SliderState("nbRep", S.EX_REPS, 1f, 100f, 1f, stepProvider = { 1f })
-    val restTime = SliderState("restTime", S.REST_TIME, 0f, 3600f, 0f, stepProvider = { 1f })
+    val restTime = SliderState("restTime", S.REST_TIME, 0f, 3600f, 0f, stepProvider = { 1f }, kind = 1)
 
     val sliders: List<SliderState> = listOf(
         ecoBright, autoUnlock, chrono, btn, lap, gapTimeBtn, btnGap, gapBtnLap, lineGap,
-        topPctS, lapWidth, hold, vibe, autoStop, snake, ringEv, colR, colG, colB,
+        topPctS, lapWidth, hold, vibe, autoStop, snake, aodDelay, colR, colG, colB,
         qrVer, qrEc, precision, distance, exTime, nbRep, restTime
     )
     val byKey: Map<String, SliderState> = sliders.associateBy { it.key }
@@ -206,7 +236,9 @@ object Settings {
     val holdMs: Long get() = (hold.value * 1000f).roundToInt().toLong()
     val autoUnlockMin: Int get() = autoUnlock.value.roundToInt()
     val autoStopMin: Int get() = autoStop.value.roundToInt()
-    val ringEventsPerLine: Int get() = ringEv.value.roundToInt().coerceAtLeast(1)
+    val aodDelayMs: Long get() = (aodDelay.value * 1000f).roundToInt().toLong()
+    /** Longueur d'une série : nbRep tours en suivi avancé (objectif d'exercice réglé), sinon 1 (tour précédent). */
+    val seriesLen: Int get() = if (track && Segments.enabled()) nbRep.value.roundToInt().coerceAtLeast(1) else 1
     val qrVersion: Int get() = qrVer.value.roundToInt().coerceIn(5, 25)
     val qrLevel: Int get() = qrEc.value.roundToInt().coerceIn(0, 3)
     val distanceM: Float get() = distance.value
@@ -238,13 +270,14 @@ object Settings {
         fade = s.getBoolean("fade", false)
         custom = s.getBoolean("custom", false)
         light = s.getBoolean("light", false)
-        touchRing = s.getBoolean("touchRing", false)
         autoScroll = s.getBoolean("autoScroll", true)
         runIcons = s.getBoolean("runIcons", true)
         help = s.getBoolean("help", false)
         track = s.getBoolean("track", false)
+        trackVibe = s.getBoolean("trackVibe", true)
+        showMarkers = s.getBoolean("markers", true)
         lang = when (s.getString("lang", "fr")) { "en" -> Lang.EN; "zh" -> Lang.ZH; else -> Lang.FR }
-        logo = s.getInt("logo", 0).coerceIn(0, 11)
+        logo = s.getInt("logo", 0).coerceIn(0, Logos.count - 1)
         colNum = s.getBoolean("col0", true)
         colTotal = s.getBoolean("col1", true)
         colLap = s.getBoolean("col2", true)
@@ -269,7 +302,6 @@ object Settings {
     fun setFade(c: Context, v: Boolean) { fade = v; p(c).edit().putBoolean("fade", v).apply() }
     fun setCustom(c: Context, v: Boolean) { custom = v; p(c).edit().putBoolean("custom", v).apply() }
     fun setLight(c: Context, v: Boolean) { light = v; p(c).edit().putBoolean("light", v).apply() }
-    fun setTouchRing(c: Context, v: Boolean) { touchRing = v; p(c).edit().putBoolean("touchRing", v).apply() }
     fun setAutoScroll(c: Context, v: Boolean) { autoScroll = v; p(c).edit().putBoolean("autoScroll", v).apply() }
     fun setRunIcons(c: Context, v: Boolean) { runIcons = v; p(c).edit().putBoolean("runIcons", v).apply() }
     fun setHelp(c: Context, v: Boolean) { help = v; p(c).edit().putBoolean("help", v).apply() }
@@ -278,13 +310,19 @@ object Settings {
         p(c).edit().putBoolean("track", v).apply()
         if (v) Segments.schedule(c) else Segments.cancel(c)
     }
+    fun setTrackVibe(c: Context, v: Boolean) {
+        trackVibe = v
+        p(c).edit().putBoolean("trackVibe", v).apply()
+        if (v) Segments.schedule(c) else Segments.cancel(c)
+    }
+    fun setShowMarkers(c: Context, v: Boolean) { showMarkers = v; p(c).edit().putBoolean("markers", v).apply() }
     fun setLang(c: Context, l: Lang) {
         lang = l
         p(c).edit().putString("lang", when (l) { Lang.EN -> "en"; Lang.ZH -> "zh"; else -> "fr" }).apply()
     }
     /** Change le logo : icône de l'appli (alias de lancement), tile, complication et notification. */
     fun setLogo(c: Context, i: Int) {
-        logo = i.coerceIn(0, 11)
+        logo = i.coerceIn(0, Logos.count - 1)
         p(c).edit().putInt("logo", logo).apply()
         Launcher.apply(c, logo)
         Launcher.refresh(c)
