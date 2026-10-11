@@ -267,7 +267,7 @@ fun SettingsScreen() {
         // ---------------- À propos
         item {
             Column(Modifier.padding(top = 10.dp, bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Super StopWatch  v11", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
+                Text("Super StopWatch  v12", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
                 Text(S.ABOUT_BY.t(), fontSize = 9.sp, color = Dim, textAlign = TextAlign.Center)
             }
         }
@@ -311,7 +311,7 @@ fun RangeScreen() {
                     { Settings.persistSliders(ctx) }, null
                 ) { f ->
                     val n = (f * 100f).roundToInt()
-                    val v = spec.min0 + n / 100f * span
+                    val v = spec.fixRange(spec.min0 + n / 100f * span)      // entier pour un curseur entier
                     spec.setRange(minOf(v, spec.hi - step0).coerceAtLeast(spec.min0), spec.hi)
                 }
             }
@@ -321,7 +321,7 @@ fun RangeScreen() {
                     { Settings.persistSliders(ctx) }, null
                 ) { f ->
                     val n = (f * 100f).roundToInt()
-                    val v = spec.min0 + n / 100f * span
+                    val v = spec.fixRange(spec.min0 + n / 100f * span)
                     spec.setRange(spec.lo, maxOf(v, spec.lo + step0).coerceAtMost(spec.max0))
                 }
             }
@@ -372,7 +372,9 @@ fun TrackScreen() {
 
     ScalingLazyColumn(Modifier.fillMaxSize(), state = listState, horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text(S.TRACK.t(), fontSize = 14.sp, color = Dim) }
-        item { SliderRow(Settings.precision, accent, unit = " m") }
+        // Les deux précisions en haut : la précision distance règle le pas de tous les curseurs de distance, la précision temps celui de tous les curseurs de temps
+        item { SliderRow(Settings.precisionDist, accent, unit = " m") }
+        item { SliderRow(Settings.precisionTime, accent) }
         item { SliderRow(Settings.distance, accent, unit = " m") }
         item {
             SliderRow(
@@ -384,6 +386,7 @@ fun TrackScreen() {
         item { SliderRow(Settings.nbRep, accent, unit = " ×", onRelease = resched) }
         item { SliderRow(Settings.restTime, accent, onRelease = resched) }
         item { ToggleRow(S.TRACK_VIBE.t(), Settings.trackVibe, true, accent, "trackVibe") { Settings.setTrackVibe(ctx, it) } }
+        item { ToggleRow(S.TRACK_RECAL.t(), Settings.trackRecal, true, accent, "trackRecal") { Settings.setTrackRecal(ctx, it) } }
     }
 }
 
@@ -574,7 +577,7 @@ fun SessionScreen() {
     }
 }
 
-/** Codes QR de la séance : fond blanc imposé, luminosité maximale, défilement gauche/droite entre les blocs. */
+/** Codes QR de la séance : fond blanc imposé, luminosité du système (aucune luminosité forcée), défilement gauche/droite entre les blocs. */
 @Composable
 fun QrScreen() {
     val s = History.sessions.getOrNull(Ui.sessionIndex)
@@ -589,24 +592,6 @@ fun QrScreen() {
         if (items.isEmpty()) emptyList() else qrBlocks(items, qrCapacity(ver, ec))
     }
     val mats = remember(blocks, ver, ec) { blocks.map { qrMatrix(it, ver, ec) } }
-
-    val act = LocalContext.current as? Activity
-    DisposableEffect(Unit) {
-        val w = act?.window
-        val old = w?.attributes?.screenBrightness ?: -1f
-        if (w != null) {
-            val lp = w.attributes
-            lp.screenBrightness = 1f
-            w.attributes = lp
-        }
-        onDispose {
-            if (w != null) {
-                val lp = w.attributes
-                lp.screenBrightness = old
-                w.attributes = lp
-            }
-        }
-    }
 
     Box(Modifier.fillMaxSize().background(Color.White), contentAlignment = Alignment.Center) {
         if (mats.isEmpty()) {

@@ -204,10 +204,14 @@ class Info(val key: String, val title: S, fr: String, en: String, zh: String) {
                 "超过此时长后秒表自动停止，并精确定格在该时间，即使屏幕熄灭也有效。\n“关闭”表示无限制。\n长按可打开滑块的最小 / 最大范围。"),
 
             // ---------------- Suivi avancé
-            Info("precision", S.TRACK_PRECISION,
-                "Pas de réglage de la distance par tour : de 0,1 m à 1000 m.\nUn pas fin permet de régler une distance précise (une piste de 400 m, une longueur de 25 m…).",
-                "Adjustment step of the distance per lap: from 0.1 m to 1000 m.\nA fine step lets you set an exact distance (a 400 m track, a 25 m pool length…).",
-                "每圈距离的调节步长：0.1 米至 1000 米。\n较小的步长便于设置精确距离（400 米跑道、25 米泳池等）。"),
+            Info("precisionDist", S.TRACK_PRECISION,
+                "Pas de réglage de tous les curseurs de distance du suivi avancé (distance par tour) : de 0,1 m à 1000 m.\nUn pas fin permet de régler une distance précise (une piste de 400 m, une longueur de 25 m…).",
+                "Adjustment step of all the distance sliders of advanced tracking (distance per lap): from 0.1 m to 1000 m.\nA fine step lets you set an exact distance (a 400 m track, a 25 m pool length…).",
+                "高级跟踪中所有距离滑块（每圈距离）的调节步长：0.1 米至 1000 米。\n较小的步长便于设置精确距离（400 米跑道、25 米泳池等）。"),
+            Info("precisionTime", S.TRACK_PRECISION_TIME,
+                "Pas de réglage de tous les curseurs de temps du suivi avancé (temps d'exercice, temps de repos) : 1 s, 2 s, 5 s, 10 s, 30 s, 1 min, 2 min, 5 min, 10 min, 20 min, 30 min ou 1 h.\nUn pas large règle vite une longue durée ; un pas fin règle une durée exacte.",
+                "Adjustment step of all the time sliders of advanced tracking (exercise time, rest time): 1 s, 2 s, 5 s, 10 s, 30 s, 1 min, 2 min, 5 min, 10 min, 20 min, 30 min or 1 h.\nA large step sets a long duration quickly; a fine step sets an exact duration.",
+                "高级跟踪中所有时间滑块（运动时间、休息时间）的调节步长：1 秒、2 秒、5 秒、10 秒、30 秒、1 分、2 分、5 分、10 分、20 分、30 分或 1 小时。\n步长大可快速设置较长时间；步长小可设置精确时间。"),
             Info("distance", S.TRACK_DIST,
                 "Distance parcourue à chaque tour. Elle sert à calculer l'allure (min/km) de chaque tour.\n0 = pas d'allure. Il faut aussi activer la colonne « Allure ».",
                 "Distance covered in each lap. It is used to compute each lap's pace (min/km).\n0 = no pace. The « Pace » column must also be enabled.",
@@ -227,7 +231,11 @@ class Info(val key: String, val title: S, fr: String, en: String, zh: String) {
             Info("trackVibe", S.TRACK_VIBE,
                 "Si activé, la montre vibre (comme pour un tour) à chaque objectif atteint : fin d'un exercice, début du repos et fin du repos.\nSi désactivé, seul le cercle indique la progression.",
                 "When on, the watch vibrates (like a lap) at each goal reached: end of an exercise, start of the rest and end of the rest.\nWhen off, only the ring shows progress.",
-                "开启后，每达到一个目标（运动结束、休息开始、休息结束），手表都会像计圈一样振动。\n关闭后，仅通过圆环显示进度。")
+                "开启后，每达到一个目标（运动结束、休息开始、休息结束），手表都会像计圈一样振动。\n关闭后，仅通过圆环显示进度。"),
+            Info("trackRecal", S.TRACK_RECAL,
+                "Si activé, chaque tour (bouton du bas ou bouton Tour) recale les objectifs sur ce que vous faites, sans changer leurs durées.\nUn tour marque la fin d'un segment : chaque exercice, puis le repos (un tour au début du repos, un autre à sa fin). Le prochain objectif devient l'instant du tour + la durée du segment suivant.\nExemple : exercice 10 s × 3, repos 20 s. Tour à 8 s : prochain objectif à 18 s. Tour à 20 s : 30 s. Tour à 31 s : fin du repos à 51 s.\nUne vibration déjà passée n'est pas rejouée. Annuler le dernier tour annule aussi son décalage. Le cercle repart aussi au tour.\nAvec cette option, une série compte un tour par segment (repos compris) pour les triangles ▲▼.\nDésactivé : les objectifs restent fixes (10 s, 20 s, 30 s…).",
+                "When on, every lap (bottom button or Lap button) re-syncs the goals to what you actually do, without changing their durations.\nA lap marks the end of a segment: each exercise, then the rest (one lap at the start of the rest, another at its end). The next goal becomes the lap time + the duration of the next segment.\nExample: exercise 10 s × 3, rest 20 s. Lap at 8 s: next goal at 18 s. Lap at 20 s: 30 s. Lap at 31 s: end of the rest at 51 s.\nA vibration already passed is not replayed. Undoing the last lap also undoes its shift. The ring restarts at the lap too.\nWith this option, a series counts one lap per segment (rest included) for the ▲▼ triangles.\nOff: goals stay fixed (10 s, 20 s, 30 s…).",
+                "开启后，每次计圈（底部按键或“计圈”按钮）都会按您的实际节奏校准后续目标，目标时长不变。\n一圈代表一个阶段的结束：每次运动，然后是休息（休息开始时计一圈，休息结束时再计一圈）。下一个目标 = 本圈时刻 + 下一阶段的时长。\n例：运动 10 秒 × 3，休息 20 秒。第 8 秒计圈：下一目标在 18 秒；第 20 秒计圈：30 秒；第 31 秒计圈：休息结束于 51 秒。\n已经过去的振动不会补振。撤销最后一圈也会撤销其偏移。圆环同样从该圈重新开始。\n启用此选项后，▲▼ 三角将每个阶段（含休息）算作一圈来划分一组。\n关闭：目标保持固定（10 秒、20 秒、30 秒…）。")
         )
         val byKey: Map<String, Info> = all.associateBy { it.key }
     }
@@ -256,17 +264,17 @@ val HELP_SECTIONS: List<Pair<T3, T3>> = listOf(
         "With the option on, the screen locks when the timer starts to avoid accidental touches. The physical button stays active.\nHold the padlock at the top of the screen to unlock, or set an automatic unlock.",
         "开启后，启动秒表时屏幕会自动锁定，避免误触，实体按键仍可使用。\n长按屏幕顶部的锁图标即可解锁，也可设置自动解锁。"),
     T3("Suivi avancé", "Advanced tracking", "高级跟踪") to T3(
-        "Distance par tour : donne l'allure (min/km) de chaque tour.\nObjectifs : un temps d'exercice, un nombre de répétitions et un temps de repos. Le cercle suit le segment en cours et la montre vibre à chaque objectif atteint (désactivable).\nCes réglages restent accessibles pendant l'activité par un appui long sur l'icône de suivi.",
-        "Distance per lap: gives each lap's pace (min/km).\nGoals: an exercise time, a number of repetitions and a rest time. The ring follows the current segment and the watch vibrates at each goal reached (can be turned off).\nThese settings stay reachable during an activity with a long press on the tracking icon.",
-        "每圈距离：计算每圈的配速（分/公里）。\n目标：运动时间、重复次数和休息时间。圆环对应当前阶段，每达到一个目标手表就会振动（可关闭）。\n活动期间长按跟踪图标即可进入这些设置。"),
+        "Distance par tour : donne l'allure (min/km) de chaque tour.\nObjectifs : un temps d'exercice, un nombre de répétitions et un temps de repos. Le cercle suit le segment en cours et la montre vibre à chaque objectif atteint (désactivable).\nLes deux curseurs de précision du haut règlent le pas de tous les curseurs de distance et de tous les curseurs de temps.\nRecalage (option) : chaque tour décale les objectifs suivants selon votre rythme réel, sans changer leurs durées.\nCes réglages restent accessibles pendant l'activité par un appui long sur l'icône de suivi.",
+        "Distance per lap: gives each lap's pace (min/km).\nGoals: an exercise time, a number of repetitions and a rest time. The ring follows the current segment and the watch vibrates at each goal reached (can be turned off).\nThe two precision sliders at the top set the step of all the distance sliders and of all the time sliders.\nRe-sync (option): every lap shifts the next goals to your real pace, without changing their durations.\nThese settings stay reachable during an activity with a long press on the tracking icon.",
+        "每圈距离：计算每圈的配速（分/公里）。\n目标：运动时间、重复次数和休息时间。圆环对应当前阶段，每达到一个目标手表就会振动（可关闭）。\n顶部的两个精度滑块分别决定所有距离滑块和所有时间滑块的步长。\n校准（可选）：每次计圈都会按您的实际节奏后移后续目标，目标时长不变。\n活动期间长按跟踪图标即可进入这些设置。"),
     T3("Historique", "History", "历史记录") to T3(
         "Chaque Reset enregistre la séance (50 au maximum, nom = date et heure).\nGlissez une séance vers la droite pour l'ouvrir : statistiques (meilleur, pire, moyenne, médiane, écart-type, régularité), liste des tours et codes QR.\nMaintenez une séance pour la supprimer, ou le bouton du bas de la liste pour tout effacer.",
         "Each Reset saves the session (50 at most, named by date and time).\nSwipe a session to the right to open it: statistics (best, worst, average, median, standard deviation, consistency), lap list and QR codes.\nHold a session to delete it, or the button at the bottom of the list to clear everything.",
         "每次重置都会保存该次记录（最多 50 条，以日期和时间命名）。\n向右滑动某条记录即可打开：统计（最佳、最差、平均、中位数、标准差、稳定度）、圈次列表和二维码。\n长按某条记录可删除，长按列表底部按钮可全部清除。"),
     T3("Codes QR", "QR codes", "二维码") to T3(
-        "Dans une séance, le bouton QR affiche les temps de tour sous forme de codes QR (fond blanc, luminosité maximale). Scannez-les avec un téléphone pour récupérer les données.\nSi la séance est longue, plusieurs codes se suivent : faites défiler à gauche ou à droite.\nLa version et la correction d'erreur se règlent dans la Personnalisation.",
-        "In a session, the QR button shows the lap times as QR codes (white background, maximum brightness). Scan them with a phone to get the data.\nIf the session is long, several codes follow one another: swipe left or right.\nVersion and error correction are set in Customize.",
-        "在记录中点二维码按钮，圈次用时会以二维码显示（白底、最高亮度）。用手机扫描即可获取数据。\n记录较长时会有多个二维码，可左右滑动切换。\n版本和纠错等级可在“个性化”中设置。"),
+        "Dans une séance, le bouton QR affiche les temps de tour sous forme de codes QR (fond blanc, luminosité du système : réglez-la dans les paramètres de la montre ou le menu rapide). Scannez-les avec un téléphone pour récupérer les données.\nSi la séance est longue, plusieurs codes se suivent : faites défiler à gauche ou à droite.\nLa version et la correction d'erreur se règlent dans la Personnalisation.",
+        "In a session, the QR button shows the lap times as QR codes (white background, system brightness: adjust it in the watch settings or quick menu). Scan them with a phone to get the data.\nIf the session is long, several codes follow one another: swipe left or right.\nVersion and error correction are set in Customize.",
+        "在记录中点二维码按钮，圈次用时会以二维码显示（白底、使用系统亮度：可在手表设置或快捷菜单中调节）。用手机扫描即可获取数据。\n记录较长时会有多个二维码，可左右滑动切换。\n版本和纠错等级可在“个性化”中设置。"),
     T3("Réglages et curseurs", "Settings and sliders", "设置与滑块") to T3(
         "Un appui sur un interrupteur le bascule. Un curseur se règle en glissant ou en touchant la barre.\nAppui long sur un interrupteur : explication du réglage. Appui long sur un curseur : explication, puis plage min / max (100 pas entre les deux) et retour à la plage d'origine.\nLes durées s'affichent en secondes, minutes ou heures.",
         "A tap on a switch flips it. A slider is set by dragging or touching the bar.\nLong press on a switch: explanation of the setting. Long press on a slider: explanation, then min / max range (100 steps between them) and reset to the original range.\nDurations are shown in seconds, minutes or hours.",

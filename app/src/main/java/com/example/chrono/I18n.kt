@@ -84,6 +84,8 @@ enum class S(val fr: String, val en: String, val zh: String) {
     HELP_TOGGLE("Aide", "Help", "帮助"),
     TRACK("Suivi avancé", "Advanced tracking", "高级跟踪"),
     TRACK_PRECISION("Précision distance", "Distance precision", "距离精度"),
+    TRACK_PRECISION_TIME("Précision temps", "Time precision", "时间精度"),
+    TRACK_RECAL("Recalage des objectifs", "Goal re-sync", "目标校准"),
     TRACK_DIST("Distance par tour", "Distance per lap", "每圈距离"),
     EX_TIME("Temps d'exercice", "Exercise time", "运动时间"),
     EX_REPS("Répétitions", "Repetitions", "重复次数"),

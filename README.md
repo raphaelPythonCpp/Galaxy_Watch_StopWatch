@@ -1,6 +1,6 @@
 # Super StopWatch
 
-**Chronomètre Wear OS (Galaxy Watch 7 et autres montres Wear OS 3+)** — version **v11**.
+**Chronomètre Wear OS (Galaxy Watch 7 et autres montres Wear OS 3+)** — version **v12**.
 Conçu par **Raphaël GARIVIER avec Claude (Anthropic), octobre 2026**.
 
 > *English summary:* Super StopWatch is an open-source stopwatch app for Wear OS 3+ watches (built and tested for the Samsung Galaxy Watch 7).
@@ -37,13 +37,15 @@ il n'a pas pu être testé sur toutes les montres (voir « Limites »).
 - **Arrêt automatique** d'un chrono oublié après N minutes.
 
 **Suivi avancé** (option)
-- Distance par tour (précision réglable de 0,1 m à 1 000 m) → allure `3'32/km`.
+- Deux curseurs de **précision** en haut : *précision distance* (0,1 m à 1 000 m ; règle le pas de tous les curseurs de distance) et *précision temps* (1″, 2″, 5″, 10″, 30″, 1′, 2′, 5′, 10′, 20′, 30′, 1 h ; règle le pas de tous les curseurs de temps).
+- Distance par tour → allure `3'32/km`.
 - Cycle d'exercice : *temps d'exercice* × *répétitions*, puis *repos*, puis on recommence ; vibration (comme pour un tour) à chaque frontière, même écran éteint, désactivable. Temps d'exercice = 0 → pas d'objectif.
+- **Recalage des objectifs** (interrupteur, désactivé par défaut) : chaque tour (bouton du bas ou bouton Tour) marque la fin d'un segment (chaque exercice, puis le repos : un tour au début du repos, un à sa fin) et décale les objectifs suivants, sans changer leurs durées. Ex. exercice 10 s × 3, repos 20 s : tour à 8 s → objectif à 18 s ; tour à 20 s → 30 s ; tour à 31 s → fin du repos à 51 s. Annuler le dernier tour annule son décalage. Avec le recalage, une série compte un tour par segment (repos compris) pour les triangles ▲▼.
 
 **Historique**
 - Chaque séance est enregistrée au Reset (nommée automatiquement par sa date et son heure). **Glisser vers la droite** : ouvre ; maintien : supprime.
 - Page de séance : statistiques minimalistes (meilleur, pire, moyenne, médiane, écart-type, régularité, barres), liste des tours.
-- **Codes QR** : liste Python des durées de tours en secondes au centième, par ex. `[73.12, 44.23, 20.00, 33.03]`. Version (5 → 25) et niveau de correction réglables ; découpage en blocs si nécessaire, défilement gauche/droite.
+- **Codes QR** : liste Python des durées de tours en secondes au centième, par ex. `[73.12, 44.23, 20.00, 33.03]`. Version (5 → 25) et niveau de correction réglables ; découpage en blocs si nécessaire, défilement gauche/droite. Fond blanc ; la **luminosité est celle du système** (aucune luminosité forcée).
 
 **Personnalisation** (interrupteur dédié dans les réglages)
 - Langues : **Français, English, 中文 (mandarin simplifié)**.
@@ -70,7 +72,7 @@ Le bouton physique « Retour » n'existe pas sur toutes les montres (pas sur Pix
 ## Installation (Windows, sans Android Studio)
 
 ### 1. Récupérer l'APK
-Depuis l'onglet **Releases** du dépôt GitHub : télécharger `SuperStopWatch-v11-buildN.apk`
+Depuis l'onglet **Releases** du dépôt GitHub : télécharger `SuperStopWatch-v12-buildN.apk`
 (ou onglet **Actions → dernière exécution → Artifacts**).
 
 ### 2. Installer *platform-tools* (adb)
@@ -88,14 +90,14 @@ Depuis l'onglet **Releases** du dépôt GitHub : télécharger `SuperStopWatch-v
 adb pair ADRESSE_IP:PORT_APPAIRAGE        :: saisir le code à 6 chiffres affiché sur la montre
 adb connect ADRESSE_IP:PORT               :: le port affiché sur l'écran principal du débogage Wi-Fi (différent du précédent)
 adb devices                               :: la montre doit apparaître
-adb install SuperStopWatch-v11-buildN.apk
+adb install SuperStopWatch-v12-buildN.apk
 ```
 
 ### 5. Mettre à jour
 Chaque compilation GitHub est signée avec une **clé de debug différente** : une nouvelle version ne peut donc pas écraser l'ancienne.
 ```bat
 adb uninstall com.example.chrono
-adb install SuperStopWatch-v11-buildN.apk
+adb install SuperStopWatch-v12-buildN.apk
 ```
 ⚠ Les réglages et l'historique sont perdus à la désinstallation. (Une signature stable est une évolution possible, voir `PROJET_POUR_IA.txt`.)
 
@@ -112,7 +114,7 @@ Accepter la permission de **notification** : elle sert à la pastille « chrono 
 
 Le dépôt contient un workflow **GitHub Actions** (`.github/workflows/build.yml`) :
 1. Pousser le code sur la branche `main`.
-2. Le workflow compile (`gradle assembleRelease`, minification R8), renomme l'APK et publie une **Release** (`v11-buildN`).
+2. Le workflow compile (`gradle assembleRelease`, minification R8), renomme l'APK et publie une **Release** (`v12-buildN`).
 3. Si la publication échoue : *Settings → Actions → General → Workflow permissions → Read and write permissions*.
 
 Avec Android Studio : ouvrir le dossier, `Build > Build Bundle(s) / APK(s)`.

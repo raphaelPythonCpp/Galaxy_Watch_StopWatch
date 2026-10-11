@@ -319,6 +319,7 @@ object Stopwatch {
         laps.add(0, lap)
         writeLapLine(c, "L,${lap.index},${lap.lapTime},${lap.total}")
         buzz(c, false)
+        if (Settings.trackRecal) Segments.schedule(c)      // le tour décale les objectifs suivants
     }
 
     /** Retire le dernier tour enregistré (le chrono continue). */
@@ -328,6 +329,7 @@ object Stopwatch {
         laps.removeAt(0)
         writeLapLine(c, "U")
         buzz(c, false)
+        if (Settings.trackRecal) Segments.schedule(c)      // le décalage de ce tour est annulé
     }
 
     /** Remise à zéro (chrono arrêté) : la séance est ajoutée à l'historique. */

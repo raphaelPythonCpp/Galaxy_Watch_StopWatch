@@ -46,5 +46,40 @@ Version
 - Veille douce de l'affichage permanent ; contact chrono / cercles à 0 %.
 
 --------------------------------------------------------
-MODIFICATIONS À APPORTER POUR LA v12 :
+MODIFICATIONS DE LA v12 (réalisées) — Super StopWatch
+========================================================
+
+Suivi avancé
+- Deux curseurs de précision en haut : « Précision distance » (règle le pas de tous les curseurs de distance) et
+  « Précision temps » (1", 2", 5", 10", 30", 1', 2', 5', 10', 20', 30', 1 h ; règle le pas de « Temps d'exercice » et « Temps de repos »).
+  La valeur d'un curseur à pas imposé est toujours un multiple du pas.
+- Interrupteur « Recalage des objectifs » (désactivé par défaut) : chaque tour (bouton du bas ou bouton Tour) marque la fin d'un
+  segment (chaque exercice, puis le repos : un tour au début du repos, un à sa fin) ; l'objectif suivant devient
+  instant du tour + durée du segment suivant, sans changer les durées. Ex. O = [10, 10, 10, 20 (R)] : tours à 8 / 20 / 31 s ->
+  objectifs à 18 / 30 / 51 s. Annuler le dernier tour annule aussi son décalage. Le cercle repart aussi au tour.
+  Avec le recalage, une série compte un tour par segment (repos compris) pour les triangles ▲▼.
+
+Curseurs
+- Audit entier / décimal : nouveau mode `isInt`. Entiers (valeur ET min / max du sous-menu) : répétitions, versions et correction QR,
+  couleurs R/V/B, luminosité éco, vibrations (%), déverrouillage auto, arrêt auto, délai avant veille, tailles (chrono, cercles, tours),
+  temps d'exercice, temps de repos. Décimaux (arrondis aux décimales de leur pas, valeur réelle = valeur affichée) : distance,
+  espacements, snake, haut de l'écran, largeur des tours ; temps de maintien (pas de 0,1 s).
+  Cause du bug : le sous-menu min / max calculait ses bornes en décimal (ex. 1,99 / 34,65), ce qui rendait la valeur décimale.
+
+Codes QR
+- Plus aucune luminosité forcée : celle du système (réglages de la montre ou menu rapide), même en mode éco sur cet écran.
+
+Triangles ▲▼
+- Constat : ils s'affichent désormais (aucun changement de code de dessin).
+
+Version
+- v12 : versionCode 12, workflow GitHub, README, PROJET_POUR_IA.
+
+À vérifier sur la montre
+- Recalage : tours à 8 / 20 / 31 s avec O = [10, 10, 10, 20 (R)] ; annulation du dernier tour ; vibration déjà passée non rejouée.
+- Curseurs entiers : plus de décimales dans le sous-menu min / max (répétitions, couleurs, QR…).
+- Luminosité du système sur l'écran des QR.
+
+--------------------------------------------------------
+MODIFICATIONS À APPORTER POUR LA v13 :
 -

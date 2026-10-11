@@ -225,13 +225,15 @@ fun App() {
         }
     }
 
-    // Luminosité : minimale en veille douce ; réglée en mode éco ; sinon celle du système
+    // Luminosité : minimale en veille douce ; réglée en mode éco ; sinon (et toujours sur l'écran des codes QR) celle du système
     val dimmed = Ui.ambient && Ui.soft
-    LaunchedEffect(eco, Settings.ecoBrightness, dimmed) {
+    val onQr = Ui.screen == Screen.QR
+    LaunchedEffect(eco, Settings.ecoBrightness, dimmed, onQr) {
         (ctx as? Activity)?.window?.let { w ->
             val lp = w.attributes
             lp.screenBrightness =
                 if (dimmed) 0.01f
+                else if (onQr) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                 else if (eco) (Settings.ecoBrightness / 100f).coerceAtLeast(0.01f)
                 else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
             w.attributes = lp
