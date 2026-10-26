@@ -25,7 +25,7 @@ class SegmentReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Stopwatch.load(context)
         if (!Stopwatch.running || !Segments.enabled()) return
-        if (Settings.trackVibe) Stopwatch.buzz(context, false)   // vibration identique à celle d'un tour
+        if (Settings.trackVibe) Stopwatch.buzz(context, false, alarm = true)   // identique à un tour ; usage « alarme » : vibre aussi en arrière-plan, écran éteint
         Segments.schedule(context)
     }
 }

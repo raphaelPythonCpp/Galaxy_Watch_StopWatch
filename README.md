@@ -1,6 +1,6 @@
 # Super StopWatch
 
-**Chronomètre Wear OS (Galaxy Watch 7 et autres montres Wear OS 3+)** — version **v12**.
+**Chronomètre Wear OS (Galaxy Watch 7 et autres montres Wear OS 3+)** — version **v13**.
 Conçu par **Raphaël GARIVIER avec Claude (Anthropic), octobre 2026**.
 
 > *English summary:* Super StopWatch is an open-source stopwatch app for Wear OS 3+ watches (built and tested for the Samsung Galaxy Watch 7).
@@ -19,6 +19,7 @@ il n'a pas pu être testé sur toutes les montres (voir « Limites »).
 - Start / Stop / Tour / Reset / Annuler le dernier tour (cercles à l'écran).
 - **Bouton physique du bas (Retour)** : *tour* quand le chrono tourne, *start* sinon. Si l'écran est éteint ou vient d'être rallumé, le bouton ne fait que le réveiller (pas de tour fantôme).
 - Reset et effacement de l'historique **protégés par un appui long** (durée réglable, snake de progression + vibration).
+- **Chrono arrêté avec un temps affiché** : « Reset » devient **« Terminer »** (même action : la séance est enregistrée) et, avec l'option « Bouton annuler / suppr. », le 3ᵉ cercle « Annuler » devient **« Suppr. »** : un appui long **supprime l'activité sans l'enregistrer**.
 - Liste des tours : n°, temps total, durée du tour, allure (option), écart avec le tour précédent ; triangles ▲ / ▼ **optionnels** (plus rapide / plus lent que le tour précédent, ou que le tour de même rang de la série précédente en suivi avancé) ; couleurs en dégradé (couleur de référence → teinte intermédiaire → teinte opposée) ; moyenne en option.
 - Défilement de la liste avec la **bague rotative / tactile Samsung** (native, 1 ligne par cran).
 - Écart chrono → cercles réglable de −10 % à 100 % (0 % = les chiffres touchent les cercles).
@@ -27,7 +28,7 @@ il n'a pas pu être testé sur toutes les montres (voir « Limites »).
 **Écran et énergie**
 - Bague extérieure avec un « snake » (1 tour = 1 minute au départ, puis = meilleur tour ; en suivi avancé = segment d'exercice/repos en cours).
 - **Mode éco** : tout en niveaux de gris, mise à jour 1 fois par seconde, bague et always-on display désactivés, luminosité réglable (0 % au départ), vibrations réduites.
-- **Affichage permanent** optionnel (avec avertissement) : l'écran reste allumé tant que le chrono tourne, malgré la veille du système, puis passe en veille douce (noir, chiffres gris, luminosité minimale) après un délai réglable ; un toucher ou le bouton le réveille. **Mode clair** optionnel (avec avertissement).
+- **Affichage permanent** optionnel (avec avertissement) : l'écran reste allumé tant que le chrono tourne, malgré la veille du système, puis passe en veille douce (noir, chiffres gris, luminosité minimale) après un délai réglable (2 s à 1 h) ; un toucher ou le bouton le réveille. **Mode clair** optionnel (avec avertissement).
 - Aucun réveil quand l'écran est éteint ; enregistrement des tours « en ajout seul » en mode éco.
 
 **Sécurité**
@@ -35,11 +36,12 @@ il n'a pas pu être testé sur toutes les montres (voir « Limites »).
 - **Appli fermée ou « Forcer l'arrêt »** : le chrono est arrêté et remis à zéro dès que l'appli (ou le tile / la complication) se relance, et la séance est enregistrée. Deux détections indépendantes : une *sentinelle* (alarme lointaine qui disparaît à l'arrêt forcé) et le journal de sortie du système. Quitter simplement l'appli ne coupe pas le chrono ; un redémarrage de la montre non plus.
 - Bouton « **Stop + Reset** » sur la notification de la pastille du cadran.
 - **Arrêt automatique** d'un chrono oublié après N minutes.
+- Le temps est mesuré avec l'**horloge monotone** du système : un recalage de l'heure de la montre (synchronisation avec le téléphone, réseau) ne fausse pas le chrono. Après un redémarrage de la montre, on retombe sur l'heure murale (le chrono survit au redémarrage).
 
 **Suivi avancé** (option)
 - Deux curseurs de **précision** en haut : *précision distance* (0,1 m à 1 000 m ; règle le pas de tous les curseurs de distance) et *précision temps* (1″, 2″, 5″, 10″, 30″, 1′, 2′, 5′, 10′, 20′, 30′, 1 h ; règle le pas de tous les curseurs de temps).
 - Distance par tour → allure `3'32/km`.
-- Cycle d'exercice : *temps d'exercice* × *répétitions*, puis *repos*, puis on recommence ; vibration (comme pour un tour) à chaque frontière, même écran éteint, désactivable. Temps d'exercice = 0 → pas d'objectif.
+- Cycle d'exercice : *temps d'exercice* × *répétitions*, puis *repos*, puis on recommence ; vibration (comme pour un tour) à chaque frontière, même écran éteint (vibration d'usage « alarme », seule autorisée en arrière-plan par Android), désactivable. Temps d'exercice = 0 → pas d'objectif.
 - **Recalage des objectifs** (interrupteur, désactivé par défaut) : chaque tour (bouton du bas ou bouton Tour) marque la fin d'un segment (chaque exercice, puis le repos : un tour au début du repos, un à sa fin) et décale les objectifs suivants, sans changer leurs durées. Ex. exercice 10 s × 3, repos 20 s : tour à 8 s → objectif à 18 s ; tour à 20 s → 30 s ; tour à 31 s → fin du repos à 51 s. Annuler le dernier tour annule son décalage. Avec le recalage, une série compte un tour par segment (repos compris) pour les triangles ▲▼.
 
 **Historique**
@@ -72,7 +74,7 @@ Le bouton physique « Retour » n'existe pas sur toutes les montres (pas sur Pix
 ## Installation (Windows, sans Android Studio)
 
 ### 1. Récupérer l'APK
-Depuis l'onglet **Releases** du dépôt GitHub : télécharger `SuperStopWatch-v12-buildN.apk`
+Depuis l'onglet **Releases** du dépôt GitHub : télécharger `SuperStopWatch-v13-buildN.apk`
 (ou onglet **Actions → dernière exécution → Artifacts**).
 
 ### 2. Installer *platform-tools* (adb)
@@ -90,14 +92,14 @@ Depuis l'onglet **Releases** du dépôt GitHub : télécharger `SuperStopWatch-v
 adb pair ADRESSE_IP:PORT_APPAIRAGE        :: saisir le code à 6 chiffres affiché sur la montre
 adb connect ADRESSE_IP:PORT               :: le port affiché sur l'écran principal du débogage Wi-Fi (différent du précédent)
 adb devices                               :: la montre doit apparaître
-adb install SuperStopWatch-v12-buildN.apk
+adb install SuperStopWatch-v13-buildN.apk
 ```
 
 ### 5. Mettre à jour
 Chaque compilation GitHub est signée avec une **clé de debug différente** : une nouvelle version ne peut donc pas écraser l'ancienne.
 ```bat
 adb uninstall com.example.chrono
-adb install SuperStopWatch-v12-buildN.apk
+adb install SuperStopWatch-v13-buildN.apk
 ```
 ⚠ Les réglages et l'historique sont perdus à la désinstallation. (Une signature stable est une évolution possible, voir `PROJET_POUR_IA.txt`.)
 
@@ -114,7 +116,7 @@ Accepter la permission de **notification** : elle sert à la pastille « chrono 
 
 Le dépôt contient un workflow **GitHub Actions** (`.github/workflows/build.yml`) :
 1. Pousser le code sur la branche `main`.
-2. Le workflow compile (`gradle assembleRelease`, minification R8), renomme l'APK et publie une **Release** (`v12-buildN`).
+2. Le workflow compile (`gradle assembleRelease`, minification R8), renomme l'APK et publie une **Release** (`v13-buildN`).
 3. Si la publication échoue : *Settings → Actions → General → Workflow permissions → Read and write permissions*.
 
 Avec Android Studio : ouvrir le dossier, `Build > Build Bundle(s) / APK(s)`.
@@ -128,7 +130,8 @@ Pile technique : Kotlin 1.9, Jetpack Compose + Wear Compose, Tiles (ProtoLayout)
 | Geste | Effet |
 |---|---|
 | Bouton du bas | tour (chrono en marche) / start |
-| Maintenir **Reset** | remise à zéro (+ enregistrement dans l'historique) |
+| Maintenir **Reset / Terminer** | remise à zéro (+ enregistrement dans l'historique) |
+| Maintenir **Suppr.** (3ᵉ cercle, chrono arrêté) | supprimer l'activité sans l'enregistrer |
 | Maintenir un **réglage** (interrupteur, case, curseur) | explication (curseur : puis sous-menu min / max) |
 | Glisser une séance vers la **droite** | l'ouvrir (historique) |
 | Maintenir une séance | la supprimer |
@@ -139,7 +142,16 @@ Pile technique : Kotlin 1.9, Jetpack Compose + Wear Compose, Tiles (ProtoLayout)
 
 ---
 
+## Sécurité et confidentialité
+
+- **Aucune permission réseau** (pas d'`INTERNET`) : aucune donnée ne quitte la montre. Permissions : `VIBRATE`, `POST_NOTIFICATIONS` (pastille du cadran). `WAKE_LOCK` (inutilisé) a été retiré en v13.
+- Réglages, historique et tours sont dans le stockage privé de l'appli ; sauvegarde automatique désactivée (`allowBackup=false`).
+- Récepteurs (arrêt auto, objectifs, sentinelle, Stop + Reset) **non exportés** ; tous les `PendingIntent` sont `IMMUTABLE` ; tile et complication protégés par la permission système de liaison.
+- Aucun code distant, aucun journal (log) de données, aucune bibliothèque de publicité ou de statistiques.
+- Points d'attention : l'APK est signé avec la clé de **debug** (usage personnel via adb, voir « Mettre à jour ») ; le workflow GitHub utilise des actions publiques référencées par version (non épinglées par empreinte).
+
 ## Limites connues
+
 
 - L'application n'a **pas été testée** sur toutes les montres ; le code a été compilé uniquement par GitHub Actions.
 - Le bouton du haut (Accueil) est réservé au système : une appli ne peut pas le lire.
@@ -147,6 +159,7 @@ Pile technique : Kotlin 1.9, Jetpack Compose + Wear Compose, Tiles (ProtoLayout)
 - L'icône de l'appli est figée à l'installation : les 10 logos sont des alias de lancement (couleurs fixes) ; seul le tile suit la couleur de référence.
 - La détection de la fermeture dépend du système : « Forcer l'arrêt » est détecté par la sentinelle ; la fermeture depuis les applis récentes ne l'est que par le journal de sortie du système (selon le fabricant). Aucun des deux n'a été vérifié sur toutes les montres.
 - L'affichage permanent garde l'écran allumé (aucune permission requise) : il consomme plus de batterie et peut marquer un écran AMOLED.
+- Les vibrations d'objectifs passent par une alarme du système (`setAlarmClock`, sans permission) avec l'usage « alarme » ; elles ne dépendent donc plus de l'appli au premier plan, mais restent soumises aux réglages de vibration de la montre et à d'éventuelles restrictions de batterie du fabricant (non vérifié sur toutes les montres).
 - Un glissement vers la droite peut, selon la montre, être concurrencé par le geste « retour » du système.
 - Les codes QR trop denses (versions élevées) peuvent être illisibles sur une petite montre.
 

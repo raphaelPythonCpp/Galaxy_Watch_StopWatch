@@ -8,6 +8,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.AudioAttributes
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.compose.runtime.getValue
@@ -34,7 +36,16 @@ object Stopwatch {
 
     var nonce = 0
         private set
+    /** Heure murale au Start (sert aux comparaisons avec les horodatages du système et à la notification). */
     private var startedAt = 0L
+    /**
+     * Horloge monotone (SystemClock.elapsedRealtime) au Start : le temps mesuré n'est ainsi pas faussé quand la montre
+     * recale son heure (synchronisation avec le téléphone, réseau, changement manuel). Valable tant que la montre n'a
+     * pas redémarré (compteur de démarrages identique) ; sinon on retombe sur l'heure murale (le chrono survit au redémarrage).
+     */
+    private var startedEl = 0L
+    private var startedBoot = -1
+    private var sameBoot = false
     private var loaded = false
     private var quiet = false
     /** true : tours stockés dans un fichier en ajout seul (mode éco) ; false : dans les préférences. */
@@ -47,9 +58,18 @@ object Stopwatch {
     private fun limitMs(): Long = Settings.autoStopMin * 60_000L
     private fun lapsString() = laps.joinToString(";") { "${it.index},${it.lapTime},${it.total}" }
 
+    /** Durée écoulée depuis le dernier Start : horloge monotone si possible, sinon heure murale. */
+    private fun runDelta(): Long {
+        if (sameBoot && startedEl > 0L) {
+            val d = SystemClock.elapsedRealtime() - startedEl
+            if (d >= 0L) return d
+        }
+        return (now() - startedAt).coerceAtLeast(0L)
+    }
+
     /** Temps écoulé ; plafonné à la limite d'arrêt automatique si elle est active. */
     fun elapsed(): Long {
-        val raw = (accumulated + if (running) now() - startedAt else 0L).coerceAtLeast(0L)
+        val raw = (accumulated + if (running) runDelta() else 0L).coerceAtLeast(0L)
         val lim = limitMs()
         return if (running && lim > 0L) minOf(raw, lim) else raw
     }
@@ -63,6 +83,10 @@ object Stopwatch {
             running = p.getBoolean("run", false)
             accumulated = p.getLong("acc", 0L)
             startedAt = p.getLong("start", 0L)
+            startedEl = p.getLong("startEl", 0L)
+            startedBoot = p.getInt("startBoot", -1)
+            sameBoot = running && startedEl > 0L && startedBoot != -1 &&
+                startedBoot == bootCount(c) && SystemClock.elapsedRealtime() >= startedEl
             nonce = p.getInt("nonce", 0)
             lapsInFile = p.getBoolean("lapsFile", false)
             laps.clear()
@@ -72,7 +96,7 @@ object Stopwatch {
                 laps.add(Lap(f[0].toInt(), f[1].toLong(), f[2].toLong()))
             }
         } catch (e: Exception) {
-            running = false; accumulated = 0L; startedAt = 0L; laps.clear(); lapsInFile = false
+            running = false; accumulated = 0L; startedAt = 0L; startedEl = 0L; sameBoot = false; laps.clear(); lapsInFile = false
         }
         checkForcedStop(c)
         enforceAutoStop(c)
@@ -202,15 +226,15 @@ object Stopwatch {
     fun enforceAutoStop(c: Context) {
         val lim = limitMs()
         if (!running || lim <= 0L) return
-        val raw = accumulated + (now() - startedAt)
+        val raw = accumulated + runDelta()
         if (raw >= lim) {
-            accumulated = lim; running = false; startedAt = 0L
+            accumulated = lim; running = false; startedAt = 0L; startedEl = 0L; sameBoot = false
             save(c, true)
             Ongoing.hide(c)
             cancelAutoStop(c)
             Segments.cancel(c)
             disarmSentinel(c)
-            buzz(c, true)
+            buzz(c, true, alarm = true)       // peut venir d'une alarme : usage « alarme » pour vibrer en arrière-plan
         }
     }
 
@@ -263,10 +287,13 @@ object Stopwatch {
             .putBoolean("run", running)
             .putLong("acc", accumulated)
             .putLong("start", startedAt)
+            .putLong("startEl", startedEl)
+            .putInt("startBoot", startedBoot)
             .putInt("nonce", nonce)
             .putBoolean("lapsFile", lapsInFile)
         if (!lapsInFile) e.putString("laps", lapsString())
-        e.apply()
+        // Start / Stop / Reset : écriture immédiate (commit), pour ne jamais perdre un changement d'état si le processus est tué
+        if (notify) e.commit() else e.apply()
         if (!notify) return
         try {
             ComplicationDataSourceUpdateRequester
@@ -291,9 +318,10 @@ object Stopwatch {
 
     fun start(c: Context) {
         if (running) return
-        startedAt = now(); running = true
+        startedAt = now(); startedEl = SystemClock.elapsedRealtime(); startedBoot = bootCount(c)
+        sameBoot = true; running = true
         buzz(c, true); save(c, true)
-        Ongoing.show(c, startedAt - accumulated)
+        Ongoing.show(c, now() - elapsed())
         scheduleAutoStop(c)
         Segments.schedule(c)
         armSentinel(c)
@@ -302,7 +330,7 @@ object Stopwatch {
 
     fun stop(c: Context) {
         if (!running) return
-        accumulated += now() - startedAt; running = false
+        accumulated += runDelta(); running = false; startedEl = 0L; sameBoot = false
         buzz(c, true); save(c, true)
         Ongoing.hide(c)
         cancelAutoStop(c)
@@ -335,20 +363,31 @@ object Stopwatch {
     /** Remise à zéro (chrono arrêté) : la séance est ajoutée à l'historique. */
     fun reset(c: Context, vibrate: Boolean = true) = finishReset(c, vibrate, now())
 
-    /** Arrête puis remet à zéro, comme un Reset après un Stop. `at` = instant de l'arrêt. */
-    fun stopAndReset(c: Context, at: Long = now(), silent: Boolean = false) {
+    /** Arrête puis remet à zéro, comme un Reset après un Stop. `at` = instant (heure murale) de l'arrêt, ou maintenant si absent. */
+    fun stopAndReset(c: Context, at: Long? = null, silent: Boolean = false) {
+        var ts = now()
         if (running) {
-            accumulated += (at - startedAt).coerceAtLeast(0L)
+            if (at == null) accumulated += runDelta()
+            else { accumulated += (at - startedAt).coerceAtLeast(0L); ts = at }
             running = false
-        }
-        finishReset(c, !silent, at)
+        } else if (at != null) ts = at
+        finishReset(c, !silent, ts)
     }
 
-    private fun finishReset(c: Context, vibrate: Boolean, ts: Long) {
-        if (!running && accumulated > 0L) {
+    /**
+     * Supprime l'activité : remise à zéro SANS enregistrement dans l'historique (chrono arrêté, appui long sur « Suppr. »).
+     * La vibration est déjà donnée par l'appui long.
+     */
+    fun discard(c: Context) {
+        running = false
+        finishReset(c, false, now(), saveSession = false)
+    }
+
+    private fun finishReset(c: Context, vibrate: Boolean, ts: Long, saveSession: Boolean = true) {
+        if (saveSession && !running && accumulated > 0L) {
             History.add(c, Session(ts, accumulated, laps.reversed().map { it.lapTime }))
         }
-        running = false; accumulated = 0L; startedAt = 0L; laps.clear()
+        running = false; accumulated = 0L; startedAt = 0L; startedEl = 0L; sameBoot = false; laps.clear()
         try { lapFile(c).delete() } catch (e: Exception) { }
         lapsInFile = false
         if (vibrate) buzz(c, true)
@@ -363,8 +402,21 @@ object Stopwatch {
     /** Bouton physique : tour si en marche, sinon start. */
     fun primary(c: Context) { if (running) lap(c) else start(c) }
 
-    /** strong = start/stop/reset ; sinon tour. Intensité globale réglable (0 = aucune vibration). */
-    fun buzz(c: Context, strong: Boolean) {
+    /** Usage « alarme » : sans lui, le système ignore les vibrations d'une appli qui n'est pas au premier plan (écran éteint, alarme d'objectif). */
+    private val alarmAttrs: AudioAttributes by lazy {
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+    }
+
+    /**
+     * strong = start/stop/reset ; sinon tour. Intensité globale réglable (0 = aucune vibration).
+     * alarm = true pour les vibrations déclenchées hors de l'appli (objectifs du suivi avancé, arrêt automatique) :
+     * Android 10+ n'autorise une vibration d'arrière-plan que pour les usages alarme / sonnerie / notification.
+     */
+    @Suppress("DEPRECATION")
+    fun buzz(c: Context, strong: Boolean, alarm: Boolean = false) {
         try {
             Settings.load(c)
             val pct = Settings.vibePct
@@ -378,7 +430,7 @@ object Stopwatch {
             } else {
                 VibrationEffect.createOneShot(55, amp(190))
             }
-            v.vibrate(effect)
+            if (alarm) v.vibrate(effect, alarmAttrs) else v.vibrate(effect)
         } catch (e: Exception) { }
     }
 }

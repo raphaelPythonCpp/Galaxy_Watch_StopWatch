@@ -1,5 +1,5 @@
 ================================================================================
- SUPER STOPWATCH (v12) — DOCUMENT DE REPRISE POUR UNE IA
+ SUPER STOPWATCH (v13) — DOCUMENT DE REPRISE POUR UNE IA
  Projet : chronomètre Wear OS (Galaxy Watch 7) — Kotlin / Jetpack Compose for Wear OS
  Auteur / chef de projet : Raphaël GARIVIER — Génération du code : Claude (Anthropic), octobre 2026
 ================================================================================
@@ -60,7 +60,13 @@ l'utilisateur a refusé, et comment continuer.
             suppression d'une séance, aide, avertissements (mode clair / AOD), défilement auto de la liste,
             icônes du haut en activité (appui long), 1 ligne par cran de bague, release GitHub automatique,
             README et ce document.
-  - v12   : (version actuelle) voir ci-dessous « v12 ». Curseurs ENTIERS (isInt) / décimaux corrigés ; deux précisions (distance, temps)
+  - v13   : (version actuelle, probablement la finale) audit complet + 3 demandes : (1) vibrations des objectifs : usage ALARME
+            (cause : Android >= 10 ignore une vibration venant d'un processus d'arrière-plan, or l'alarme d'objectif s'exécute
+            hors de l'appli) ; (2) chrono arrêté avec un temps : « Reset » -> « Terminer », « Annuler » -> « Suppr. » (appui long =
+            supprime l'activité sans l'enregistrer, Stopwatch.discard) ; (3) délai de veille de l'affichage permanent 2 s -> 1 h.
+            Audit : horloge monotone, commit des changements d'état, WAKE_LOCK retiré, boucle d'appui long de l'historique,
+            garde division par zéro des stats, formats indépendants de la locale. Voir « 10. AUDIT v13 ».
+  - v12   : voir ci-dessous « v12 ». Curseurs ENTIERS (isInt) / décimaux corrigés ; deux précisions (distance, temps)
             en haut du suivi avancé ; recalage des objectifs sur les tours (interrupteur trackRecal, défaut non) ;
             QR : luminosité du système (plus aucune luminosité forcée). Les triangles ▲▼ s'affichent (rien à changer).
   - v11   : 10 logos (les 2 « clock » de la v10 + 8 vectorisés depuis apercu_logos.svg) ; durées
@@ -174,7 +180,7 @@ Ressources : res/drawable/logo_XX.xml, glyph_XX.xml, ic_stopwatch.xml (ancien pi
 res/values{,-en,-zh}/strings.xml (app_name = « Super StopWatch », tile_description).
 Manifeste : 1 activité MainActivity (sans filtre LAUNCHER), 10 `activity-alias` `.Logo01..10` portant le filtre
 LAUNCHER (un seul `enabled=true` à la fois, label fixe « Super StopWatch »), 4 receivers (dont SentinelReceiver), 1 tile service, 1 complication.
-Permissions : VIBRATE, WAKE_LOCK, POST_NOTIFICATIONS. `setAlarmClock` n'exige pas de permission d'alarme exacte.
+Permissions : VIBRATE, POST_NOTIFICATIONS (WAKE_LOCK retiré en v13). `setAlarmClock` n'exige pas de permission d'alarme exacte.
 
 --------------------------------------------------------------------------------
 4. DÉTAILS PAR DOMAINE
@@ -204,7 +210,13 @@ Permissions : VIBRATE, WAKE_LOCK, POST_NOTIFICATIONS. `setAlarmClock` n'exige pa
     Rejeté : onDestroy/isFinishing (le geste « quitter » de Wear finit aussi l'activité), service avec onTaskRemoved
     (arrêté ~1 min après la mise en arrière-plan sans service de premier plan), savedInstanceState (faux positifs).
   - Arrêt auto : Settings.autoStopMin ; alarme inexacte (AutoStopReceiver) + vérification à chaque tick/ouverture.
-  - Vibrations : buzz(c, strong) (tour = 55 ms, start/stop = double 140 ms, amplitudes × Settings.vibePct) ;
+  - Horloge (v13) : le temps écoulé = accumulated + runDelta(). runDelta() = SystemClock.elapsedRealtime() - startedEl (monotone,
+    insensible aux recalages de l'heure) tant que la montre n'a pas redémarré (BOOT_COUNT identique à `startBoot`) ; sinon heure
+    murale (now() - startedAt), ce qui garde le chrono vivant après un redémarrage. Persistés : start, startEl, startBoot.
+    Start / Stop / Reset écrivent les préférences avec commit() (pas apply()) pour ne jamais perdre un changement d'état.
+  - Vibrations : buzz(c, strong, alarm) (tour = 55 ms, start/stop = double 140 ms, amplitudes × Settings.vibePct) ;
+    alarm = true (objectifs du suivi avancé, arrêt auto) => AudioAttributes USAGE_ALARM : sans cela, VibratorManagerService
+    ignore les vibrations d'un processus d'arrière-plan (IGNORED_BACKGROUND) ;
     en éco : une impulsion courte. Frontières d'objectif (suivi avancé) : buzz(c, false) = vibration d'un tour,
     uniquement si Settings.trackVibe (sinon aucune alarme n'est posée).
   - Formats : fmtMain (mm:ss, h:mm:ss, ou secondes seules si secMode), fmtTenth (.d), fmtFull. JAMAIS plus que les
@@ -229,6 +241,9 @@ Permissions : VIBRATE, WAKE_LOCK, POST_NOTIFICATIONS. `setAlarmClock` n'exige pa
   - Triangles ▲▼ (option Settings.showMarkers, défaut oui) : relMarker(tour, référence) ; référence = tour précédent
     (laps[i+1] dans la liste récente d'abord, rows[i-1] dans une séance) ; en suivi avancé avec objectif réglé
     (Settings.seriesLen = nbRep) = tour de même rang dans la série précédente (décalage de nbRep).
+  - Cercles (v13) : chrono arrêté avec un temps (!running && accumulated > 0 = `finished`) => « Reset » est affiché « Terminer »
+    (même action, séance enregistrée) et, si l'option « Bouton annuler / suppr. » est active, « Annuler » devient « Suppr. » :
+    HoldButton -> Stopwatch.discard(c) = remise à zéro SANS History.add. Sans l'option, il n'y a pas de 3e cercle donc pas de suppression.
   - Icônes du haut (28 dp, centrées ensemble) : au repos réglages/historique/[aide]/[suivi] (appui simple) ; en activité
     [réglages si runIcons]/[suivi] (appui long) + cadenas (appui long déverrouille) quand verrouillé.
 4.3 Verrou tactile
@@ -262,7 +277,7 @@ Permissions : VIBRATE, WAKE_LOCK, POST_NOTIFICATIONS. `setAlarmClock` n'exige pa
 4.6 Réglages (SettingsScreen)
   - Essentiels (toujours visibles) : mode éco (+ luminosité éco), temps de maintien, couleur RVB, verrou tactile (+ déverrouillage
     auto, « bague en verrou »), affichage permanent (avertissement ; + « délai avant veille » quand actif), réglages en
-    activité (avertissement à la DÉSACTIVATION), aide, suivi avancé, interrupteur Personnalisation, À PROPOS (v12).
+    activité (avertissement à la DÉSACTIVATION), aide, suivi avancé, interrupteur Personnalisation, À PROPOS (v13).
   - Personnalisation : langue (3 boutons), logos (grille 5×2 de 10), mode clair (avertissement), cercle + taille du snake,
     défilement auto, mode gaucher, bouton annuler, temps en secondes, fondu des tours, triangles ▲▼, colonnes
     (2-2-2 : N°/Total, Tour/Écart, Allure/Moy.), QR (version 5..25, correction L/M/Q/H), tailles, espacements (% hauteur,
@@ -318,8 +333,8 @@ Permissions : VIBRATE, WAKE_LOCK, POST_NOTIFICATIONS. `setAlarmClock` n'exige pa
   profileinstaller 1.3.1, tiles 1.4.1, protolayout 1.2.1, concurrent-futures 1.2.0,
   watchface-complications-data-source-ktx 1.2.1, zxing core 3.5.3.
 - Workflow `.github/workflows/build.yml` : checkout, Java 17 (temurin), setup-gradle (8.7), `gradle assembleRelease
-  --no-daemon`, copie en `SuperStopWatch-v12-build<N>.apk`, upload-artifact, `softprops/action-gh-release@v2`
-  (tag `v12-build<N>`, `permissions: contents: write`). Si la release échoue : réglage du dépôt « Read and write
+  --no-daemon`, copie en `SuperStopWatch-v13-build<N>.apk`, upload-artifact, `softprops/action-gh-release@v2`
+  (tag `v13-build<N>`, `permissions: contents: write`). Si la release échoue : réglage du dépôt « Read and write
   permissions ». Ce fichier doit être édité à la main sur github.com (dossier caché).
 - Installation Windows : platform-tools, `adb pair IP:PORT`, `adb connect IP:PORT`, `adb install fichier.apk`.
   Mise à jour : `adb uninstall com.example.chrono` puis install (clés de debug différentes à chaque build).
@@ -373,6 +388,33 @@ Permissions : VIBRATE, WAKE_LOCK, POST_NOTIFICATIONS. `setAlarmClock` n'exige pa
 - « Essentiels » : réglages affichés même sans Personnalisation.
 - « Suivi avancé » : menu distance/allure + exercice/repos.
 - « Alias » : `activity-alias` du manifeste, utilisé pour changer l'icône de l'appli.
+
+--------------------------------------------------------------------------------
+10. AUDIT v13 (sécurité, robustesse, batterie) — à relire avant toute modification
+--------------------------------------------------------------------------------
+Corrigé en v13 :
+  - Vibrations d'objectifs absentes (écran éteint / appli en arrière-plan) : usage ALARME (voir 4.1).
+  - Horloge : le chrono utilisait l'heure murale (System.currentTimeMillis) : un recalage de l'heure (synchro téléphone / réseau)
+    faussait le temps. Maintenant horloge monotone + repli sur l'heure murale après redémarrage.
+  - Persistance : Start / Stop / Reset en commit() (avant : apply(), perte possible si le processus est tué juste après).
+  - Permission WAKE_LOCK déclarée mais jamais utilisée : retirée (moindre privilège).
+  - Historique : une boucle à 60 Hz par carte tournait en permanence (swipeOrHold) : elle ne tourne plus que pendant un appui
+    (Channel.CONFLATED comme signal de réveil).
+  - Statistiques de séance : division par zéro possible (tous les tours à 0 ms) : gardée.
+  - Formats de nombres (« %02d ») : Locale.ROOT, pour ne pas dépendre de la langue du système.
+  - Tableau de capacités QR (versions 5..25, L/M/Q/H) : 84 valeurs vérifiées avec une bibliothèque indépendante (python qrcode) : exact.
+Vérifié, sans changement :
+  - Composants : 4 récepteurs `exported=false` ; tile / complication protégés par BIND_TILE_PROVIDER / BIND_COMPLICATION_PROVIDER ;
+    tous les PendingIntent en FLAG_IMMUTABLE ; aucun Intent implicite ; MainActivity `exported=true` (sans filtre, ne traite aucun
+    extra) : laissé tel quel car la changer sans test pourrait empêcher le lancement par les alias.
+  - Aucune permission réseau, aucun log, allowBackup=false, stockage privé (SharedPreferences + files/laps.log).
+  - Analyse des fichiers lus au chargement : try / catch partout (History, tours) ; plafonds (50 séances).
+Limites résiduelles (connues) :
+  - APK signé avec la clé de debug (usage perso) ; actions GitHub non épinglées par empreinte.
+  - setAlarmClock s'affiche comme « prochaine alarme » du système sur certaines montres.
+  - Rien de ceci n'a été exécuté sur une montre (aucun environnement Android côté IA). Compilation : GitHub Actions uniquement.
+  - Fermeture depuis les applis récentes = stop + reset au prochain lancement (voulu) ; un « sommeil » imposé par le fabricant
+    (Samsung : applis en veille profonde) peut aussi déclencher cette détection.
 
 --------------------------------------------------------------------------------
 9. LICENCE ET CRÉDITS

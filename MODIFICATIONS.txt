@@ -81,5 +81,37 @@ Version
 - Luminosité du système sur l'écran des QR.
 
 --------------------------------------------------------
-MODIFICATIONS À APPORTER POUR LA v13 :
+MODIFICATIONS DE LA v13 (réalisées) — Super StopWatch (probablement la version finale)
+========================================================
+
+Demandes
+- Suivi avancé : les objectifs ne vibraient pas (paramètre activé). Cause probable : toutes les vibrations utilisaient
+  `vibrate(effect)` sans attributs ; depuis Android 10, le système ignore la vibration d'une appli qui n'est pas au premier plan,
+  sauf usage « alarme / sonnerie / notification ». Or l'objectif est déclenché par une alarme (processus en arrière-plan, écran
+  souvent éteint). Les vibrations d'objectifs et d'arrêt automatique utilisent maintenant l'usage ALARME.
+- Chrono arrêté avec un temps > 0 : « Reset » est renommé « Terminer » (même action : séance enregistrée) ; le bouton « Annuler »
+  devient « Suppr. » (appui long = supprime l'activité SANS l'enregistrer). Le 3e cercle n'existe qu'avec l'option
+  « Bouton annuler / suppr. » (renommée) ; sans elle, il n'y a pas de suppression possible.
+- Affichage permanent : « Délai avant veille » de 2 s à 1 h (avant : 5 min), échelle plus fine pour les petites valeurs, entier.
+
+Audit complet (code, sécurité, batterie)
+- Horloge monotone (SystemClock.elapsedRealtime) : un recalage de l'heure de la montre ne fausse plus le chrono ; repli sur
+  l'heure murale après un redémarrage (le chrono survit toujours au redémarrage).
+- Start / Stop / Reset enregistrés avec commit() : aucun changement d'état perdu si le processus est tué.
+- Permission WAKE_LOCK retirée (inutilisée). Aucune permission réseau, aucun log, sauvegarde désactivée, composants non exportés
+  (sauf tile / complication protégés par permission système), PendingIntent immuables : vérifiés.
+- Historique : la boucle d'appui long à 60 Hz ne tourne plus en permanence (uniquement pendant un appui) : moins de batterie.
+- Statistiques : division par zéro gardée. Formats « %02d » indépendants de la langue du système.
+- Tableau des capacités QR : 84 valeurs vérifiées avec une bibliothèque indépendante : exact.
+
+Version
+- v13 : versionCode 13, workflow GitHub, README (section Sécurité et confidentialité), PROJET_POUR_IA (section 10 Audit), À propos.
+
+À vérifier sur la montre
+- Objectifs : vibration écran éteint (poignet baissé), puis pendant un exercice ; vérifier aussi les réglages de vibration de la montre.
+- Chrono arrêté avec un temps : « Terminer » enregistre ; « Suppr. » (maintenir) supprime sans enregistrer ; texte « Terminer » non coupé.
+- Délai de veille jusqu'à 1 h ; chrono juste après un changement de l'heure (réglages de la montre).
+
+--------------------------------------------------------
+MODIFICATIONS À APPORTER POUR LA v14 :
 -

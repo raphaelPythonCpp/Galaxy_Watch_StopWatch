@@ -9,6 +9,8 @@ enum class S(val fr: String, val en: String, val zh: String) {
     START("Start", "Start", "开始"),
     STOP("Stop", "Stop", "停止"),
     UNDO("Annuler", "Undo", "撤销"),
+    FINISH("Terminer", "Finish", "完成"),
+    DELETE_SHORT("Suppr.", "Delete", "删除"),
     AVG("Moy.", "Avg.", "平均"),
 
     SETTINGS("Réglages", "Settings", "设置"),
@@ -24,7 +26,7 @@ enum class S(val fr: String, val en: String, val zh: String) {
     LIGHT("Mode clair", "Light mode", "浅色模式"),
     SNAKE("Taille du snake", "Snake size", "光带长度"),
     LEFTY("Mode gaucher", "Left-handed", "左手模式"),
-    UNDO_BTN("Bouton annuler tour", "Undo-lap button", "撤销按钮"),
+    UNDO_BTN("Bouton annuler / suppr.", "Undo / delete button", "撤销 / 删除按钮"),
     SECONDS("Temps en secondes", "Time in seconds", "以秒显示"),
     FADE("Fondu des tours", "List fade", "列表渐隐"),
     COLS("Colonnes des tours", "Lap columns", "圈次列"),

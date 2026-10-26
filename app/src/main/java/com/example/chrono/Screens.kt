@@ -267,7 +267,7 @@ fun SettingsScreen() {
         // ---------------- À propos
         item {
             Column(Modifier.padding(top = 10.dp, bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Super StopWatch  v12", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
+                Text("Super StopWatch  v13", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
                 Text(S.ABOUT_BY.t(), fontSize = 9.sp, color = Dim, textAlign = TextAlign.Center)
             }
         }
@@ -498,7 +498,7 @@ private fun StatsBlock(laps: List<Long>, eco: Boolean, pal: Palette) {
         Canvas(Modifier.fillMaxWidth(0.8f).height(26.dp)) {
             val w = size.width / n
             laps.forEachIndexed { i, v ->
-                val h = size.height * (v.toFloat() / mx.toFloat()).coerceIn(0.05f, 1f)
+                val h = size.height * (v.toFloat() / mx.coerceAtLeast(1L).toFloat()).coerceIn(0.05f, 1f)
                 drawRect(
                     lapColor(v, mn, mx, eco, pal),
                     Offset(i * w, size.height - h),

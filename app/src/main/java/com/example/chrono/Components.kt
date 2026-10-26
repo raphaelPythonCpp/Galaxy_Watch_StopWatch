@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -56,6 +57,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import java.util.Locale
 import com.google.zxing.common.BitMatrix
 
 // ---------------------------------------------------------------- thème (mode clair = 255 - rgb sur les gris)
@@ -445,17 +447,21 @@ fun Modifier.swipeOrHold(onSwipe: () -> Unit, onHold: () -> Unit, onDrag: (Float
         .pointerInput(Unit) {
             coroutineScope {
                 var t0 = -1L                       // début de l'appui qui compte pour l'appui long (-1 = aucun)
+                val wake = Channel<Unit>(Channel.CONFLATED)
                 launch {
-                    while (true) {
-                        delay(16)
-                        if (t0 >= 0L) {
-                            val p = (SystemClock.uptimeMillis() - t0).toFloat() / Settings.holdMs.coerceAtLeast(50L)
-                            Ui.hold = p.coerceAtMost(1f)
-                            if (p >= 1f) {
-                                t0 = -1L
-                                Ui.hold = 0f
-                                Stopwatch.buzz(ctx, true)
-                                hold()
+                    // Dort tant qu'aucun appui n'est en cours : aucune boucle à 60 Hz au repos (économie de batterie)
+                    for (signal in wake) {
+                        while (t0 >= 0L) {
+                            delay(16)
+                            if (t0 >= 0L) {
+                                val p = (SystemClock.uptimeMillis() - t0).toFloat() / Settings.holdMs.coerceAtLeast(50L)
+                                Ui.hold = p.coerceAtMost(1f)
+                                if (p >= 1f) {
+                                    t0 = -1L
+                                    Ui.hold = 0f
+                                    Stopwatch.buzz(ctx, true)
+                                    hold()
+                                }
                             }
                         }
                     }
@@ -465,6 +471,7 @@ fun Modifier.swipeOrHold(onSwipe: () -> Unit, onHold: () -> Unit, onDrag: (Float
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     t0 = SystemClock.uptimeMillis()
+                    wake.trySend(Unit)
                     var state = 0                  // 0 = appui en cours, 1 = glissement vers la droite, 2 = abandonné
                     while (true) {
                         val ev = awaitPointerEvent()
@@ -611,7 +618,7 @@ fun SliderRow(
 fun fmtPace(lapMs: Long, distM: Float): String {
     if (distM <= 0f) return ""
     val sec = (lapMs / 1000.0 / (distM / 1000.0)).roundToInt()
-    return "${sec / 60}'${"%02d".format(sec % 60)}/km"
+    return "${sec / 60}'${String.format(Locale.ROOT, "%02d", sec % 60)}/km"
 }
 
 /** Largeurs des colonnes, mesurées sur les valeurs réelles : chaque colonne ne prend que la place nécessaire. */
@@ -679,7 +686,7 @@ fun LapRow(lap: Lap, prevLapTime: Long?, color: Color, marker: Int, sz: Float, c
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (Settings.colNum) {
-                Text("%02d".format(lap.index), fontSize = fs, color = Dim, style = st, maxLines = 1,
+                Text(String.format(Locale.ROOT, "%02d", lap.index), fontSize = fs, color = Dim, style = st, maxLines = 1,
                     softWrap = false, overflow = TextOverflow.Visible, modifier = Modifier.width(cols.num))
             }
             if (Settings.colTotal) {

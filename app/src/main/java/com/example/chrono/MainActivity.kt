@@ -339,7 +339,7 @@ fun App() {
                                 contentAlignment = Alignment.BottomCenter
                             ) {
                                 Box(Modifier.wrapContentSize(Alignment.BottomCenter, unbounded = true)) {
-                                    Header(now, running, eco, pal, laps.isNotEmpty(), hDp)
+                                    Header(now, running, !running && acc > 0L, eco, pal, laps.isNotEmpty(), hDp)
                                 }
                             }
                         }
@@ -441,8 +441,12 @@ fun App() {
     }
 }
 
+/**
+ * finished = chrono arrêté avec un temps affiché (> 0) : « Reset » est renommé « Terminer » (même action : la séance est enregistrée)
+ * et le bouton « Annuler » (option) devient « Suppr. » : un appui long supprime l'activité sans l'enregistrer.
+ */
 @Composable
-fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, hasLaps: Boolean, hDp: Float) {
+fun Header(now: MutableLongState, running: Boolean, finished: Boolean, eco: Boolean, pal: Palette, hasLaps: Boolean, hDp: Float) {
     val ctx = LocalContext.current
     val undoOn = Settings.undoBtn
     // Diamètre réglé par le curseur « Cercles » ; réduit de 17 % quand le 3e cercle (Annuler) est présent
@@ -464,14 +468,19 @@ fun Header(now: MutableLongState, running: Boolean, eco: Boolean, pal: Palette, 
     val gapPct = Settings.gapTimeBtnPct
 
     val undo: @Composable () -> Unit = {
-        RoundButton(S.UNDO.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp, hasLaps) { Stopwatch.undoLap(ctx) }
+        if (finished) {
+            HoldButton(S.DELETE_SHORT.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp) { Stopwatch.discard(ctx) }
+        } else {
+            RoundButton(S.UNDO.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp, hasLaps) { Stopwatch.undoLap(ctx) }
+        }
     }
     val left: @Composable () -> Unit = {
         if (running) {
             RoundButton(S.LAP.t(), bs, SurfaceBtn, Fg, fs) { Stopwatch.lap(ctx) }
         } else {
             // Reset protégé : maintenir (temps réglable) ; la vibration est déjà donnée par l'appui long
-            HoldButton(S.RESET.t(), bs, SurfaceBtn, Fg, fs) { Stopwatch.reset(ctx, false) }
+            if (finished) HoldButton(S.FINISH.t(), bs, SurfaceBtn, Fg, (fs.value * 0.8f).sp) { Stopwatch.reset(ctx, false) }
+            else HoldButton(S.RESET.t(), bs, SurfaceBtn, Fg, fs) { Stopwatch.reset(ctx, false) }
         }
     }
     val right: @Composable () -> Unit = {

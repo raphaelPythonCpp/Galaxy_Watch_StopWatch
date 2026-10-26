@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.chrono"
         minSdk = 30
         targetSdk = 34
-        versionCode = 12
-        versionName = "12"
+        versionCode = 13
+        versionName = "13"
         resourceConfigurations += listOf("fr", "en", "zh")
     }
 

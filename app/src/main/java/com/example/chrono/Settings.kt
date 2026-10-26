@@ -226,7 +226,8 @@ object Settings {
     val vibe = SliderState("vibe", S.VIBE, 0f, 100f, 100f, isInt = true)
     val autoStop = SliderState("autoStop", S.AUTO_STOP, 0f, 1440f, 0f, curve = 2, kind = 2, isInt = true)
     val snake = SliderState("snake", S.SNAKE, 1f, 100f, 12.5f)
-    val aodDelay = SliderState("aodDelay", S.AOD_DELAY, 2f, 300f, 10f, stepProvider = { 1f }, kind = 1, isInt = true)
+    // 2 s à 1 h, échelle quadratique (fin pour les petites valeurs) ; entier
+    val aodDelay = SliderState("aodDelay", S.AOD_DELAY, 2f, 3600f, 10f, curve = 2, kind = 1, isInt = true)
     val colR = SliderState("colR", S.RED, 0f, 255f, 52f, isInt = true)
     val colG = SliderState("colG", S.GREEN, 0f, 255f, 211f, isInt = true)
     val colB = SliderState("colB", S.BLUE, 0f, 255f, 153f, isInt = true)
