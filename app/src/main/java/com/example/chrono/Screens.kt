@@ -425,7 +425,7 @@ fun TrackScreen() {
                     onRelease = { RandomStart.preview(ctx, 2, Settings.randShotSel) }   // aperçu au volume réglé
                 )
             }
-            item { SliderRow(Settings.randLat, accent, unit = " ms", quiet = true) }
+            item { SliderRow(Settings.randLat, accent, quiet = true) }
             item { ToggleRow(S.RAND_FREEZE.t(), Settings.randFreeze, true, accent, "randFreeze") { Settings.updateRandFreeze(ctx, it) } }
             item {
                 SoundChoiceRow(S.RAND_MARKS.t(), 3, Settings.randMarksSel, accent, onAcc, "randMarks") { n ->
