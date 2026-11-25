@@ -158,6 +158,67 @@ class SoundPlayer(context: Context) {
         main.postDelayed(r, dur.coerceAtLeast(0) + 2500L)
     }
 
+    // ---- son préparé d'avance (coup de feu) : charge + volume faits pendant l'attente, start() immédiat au tir
+    private var prep: MediaPlayer? = null
+    private var prepHeld = false
+
+    /** Charge le son resId (lecteur prêt, volume du flux alarme déjà réglé) SANS le jouer. false si impossible / volume 0 (alors play() sert de repli). */
+    fun prepare(resId: Int, volPct: Int): Boolean {
+        discardPrepared()
+        if (volPct <= 0) return false
+        val h = AlarmVolume.acquire(app, volPct)
+        var p: MediaPlayer? = null
+        try {
+            p = MediaPlayer.create(app, resId, attrs, AudioManager.AUDIO_SESSION_ID_GENERATE)
+        } catch (e: Exception) { }
+        if (p == null) {
+            if (h) AlarmVolume.release(app)
+            return false
+        }
+        prep = p
+        prepHeld = h
+        return true
+    }
+
+    /** Démarre AUSSITÔT le son préparé (le plus court chemin possible avant start()). false si rien n'était préparé ou si le démarrage échoue. */
+    fun startPrepared(onDone: (Boolean) -> Unit): Boolean {
+        val player = prep ?: return false
+        prep = null
+        val h = prepHeld
+        prepHeld = false
+        if (mp != null || held) cleanup()          // ne devrait pas arriver (les voix sont terminées) ; sans effet sinon
+        gen++
+        val g = gen
+        held = h
+        mp = player
+        try {
+            player.setOnCompletionListener { end(g, true, onDone) }
+            player.setOnErrorListener { _, _, _ -> end(g, false, onDone); true }
+            player.start()
+        } catch (e: Exception) {
+            end(g, false, onDone)
+            return false
+        }
+        val dur = try { player.duration } catch (e: Exception) { 0 }
+        val r = Runnable { end(g, false, onDone) }
+        timeout = r
+        main.postDelayed(r, dur.coerceAtLeast(0) + 2500L)
+        return true
+    }
+
+    /** Abandonne le son préparé (annulation de la séquence) et relâche le volume. */
+    private fun discardPrepared() {
+        val p = prep
+        prep = null
+        if (p != null) {
+            try { p.release() } catch (e: Exception) { }
+        }
+        if (prepHeld) {
+            prepHeld = false
+            AlarmVolume.release(app)
+        }
+    }
+
     /** Fin d'un son (normale ou erreur) : libère, restaure le volume, puis appelle onDone (via le thread principal, jamais en ré-entrance). */
     private fun end(g: Int, ok: Boolean, onDone: (Boolean) -> Unit) {
         if (g != gen) return
@@ -171,6 +232,7 @@ class SoundPlayer(context: Context) {
     fun stop() {
         gen++
         cleanup()
+        discardPrepared()
     }
 
     private fun cleanup() {

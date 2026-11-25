@@ -385,6 +385,12 @@ Aucune permission réseau.
     (RandomStart.preview, au volume du curseur ; aperçu arrêté à l'arrêt de l'activité). Utilisable si Settings.track && randStart (`enabled()`).
   - Séquence : le début de CHAQUE répétition d'exercice (la 1re incluse ; jamais le repos) se fait au coup de feu. « À vos marques » (voix)
     -> « Prêts » (voix) -> délai random -> coup de feu. Instant du tir = fin de « Prêts » + random(min, max) (hypothèse documentée).
+  - Synchro son / chrono (correctif post-v14) : standard athlétisme = le chrono part au DÉBUT du signal (attaque), pas à son pic. Les pistes de
+    tir sont coupées pile sur l'attaque (t = 0). Le lecteur du tir est CHARGÉ pendant l'attente (SoundPlayer.prepare, au passage en WAIT, avant le
+    calcul de shotAt) ; RandomStart.fire() fait : state = GO en mémoire, SoundPlayer.startPrepared() (start() immédiat), puis
+    Stopwatch.randomShot (horodatage du chrono dans ses 1res lignes) ; écriture disque / alarmes / notification viennent après. Repli : play()
+    classique si le chargement échoue. La latence propre au haut-parleur (quelques dizaines de ms) n'est pas compensée (jamais mesurée sur la montre).
+    Site de vérification : verif_coup_de_feu/index.html (hors projet Android).
   - Machine d'états (`RandomStart.state`, persistée dans les préférences « randstart » : st, frozen, first, shotAt, bT) :
     IDLE -> MARKS -> READY -> WAIT -> GO -> IDLE. `waiting` = MARKS..WAIT (le texte remplace le chrono, le bouton ANNULE, pas de tour manuel) ;
     `active` = MARKS..GO (service et wake lock gardés). Déclencheurs : 1re répétition = `Stopwatch.start` -> `RandomStart.tryStart` (séance neuve
@@ -412,7 +418,7 @@ Aucune permission réseau.
       marks_fr_1..3, marks_en_1..3, marks_zh_1..3   « À vos marques » / « On your marks » / « 各就位 »     (9 WAV)
       ready_fr_1..3, ready_en_1..3, ready_zh_1..3   « Prêts » / « Set » / « 预备 »                          (9 WAV)
       shot_synth_1..3                               coups de feu synthétisés par script                    (3 WAV)
-      shot_user_1, shot_user_2                      coups de feu fournis par l'utilisateur (fire_1, fire_2) (2 MP3)
+      shot_user_1, shot_user_2                      coups de feu fournis par l utilisateur (fire_1, fire_2), convertis en WAV et coupés pile sur l attaque (t = 0 = début du coup de feu)
     Génération (hors Android, sur le PC Windows) : voix Windows hors-ligne — FR : Hortense, Paul, Julie ; ZH : Huihui, Kangkang, Yaoyao ;
     EN : Zira avec 3 réglages différents. Coups de feu synthétisés par un script ; fire_1 / fire_2 de l'utilisateur convertis. Tous les fichiers
     sont normalisés au maximum (le volume réel est piloté par le flux ALARME). Aucun fichier n'a été écouté sur montre.

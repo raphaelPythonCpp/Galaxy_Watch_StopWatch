@@ -167,6 +167,8 @@ object RandomStart {
 
     private fun onReadyDone(c: Context) {
         if (state != READY) return
+        // Le coup de feu est CHARGÉ MAINTENANT (avant de calculer l'instant du tir) : au tir, il ne reste que start()
+        try { sp(c).prepare(Sounds.res(2, Settings.randShotSel), Settings.randVolPct) } catch (e: Exception) { }
         val mn = Settings.randMinSec * 1000L
         val mx = Settings.randMaxSec * 1000L
         val delay = if (mx > mn) mn + kotlin.random.Random.nextLong(mx - mn + 1L) else mn
@@ -187,20 +189,32 @@ object RandomStart {
     private fun fire(c: Context) {
         if (state != WAIT) return
         val app = c.applicationContext
-        handler.removeCallbacks(fireR)
-        cancelAlarm(app)
-        setState(app, GO)
+        // CHEMIN CRITIQUE (le chrono doit démarrer au même instant que le son, comme en athlétisme : début du signal) :
+        // 1) état GO en mémoire seulement (rapide) ; 2) start() du son déjà préparé ; 3) horodatage du chrono (1res lignes de randomShot).
+        // Tout le reste (écriture disque, alarmes, notification) vient APRÈS, sans retarder ni le son ni le chrono.
+        state = GO
+        var started = false
+        try { started = sp(app).startPrepared { if (state == GO) finish(app) } } catch (e: Exception) { }
         var t = -1L
         try { t = Stopwatch.randomShot(app, frozen) } catch (e: Exception) { }
-        if (t < 0L) { finish(app); return }          // chrono arrêté entre-temps : aucun tir
+        handler.removeCallbacks(fireR)
+        cancelAlarm(app)
+        persist(app)                                  // état GO sur disque
+        if (t < 0L) {                                 // chrono arrêté entre-temps : aucun tir
+            if (started) { try { sp(app).stop() } catch (e: Exception) { } }
+            finish(app)
+            return
+        }
         try {
             if (!frozen) Segments.addRandShift(app, t - boundT)    // retard réel : les objectifs suivants sont décalés d'autant
             Segments.resync(app)
             Segments.schedule(app)
         } catch (e: Exception) { }
-        try {
-            sp(app).play(Sounds.res(2, Settings.randShotSel), Settings.randVolPct) { if (state == GO) finish(app) }
-        } catch (e: Exception) { finish(app) }
+        if (!started) {                               // repli : son non préparé (échec de chargement) -> lecture classique (volume 0 = silence)
+            try {
+                sp(app).play(Sounds.res(2, Settings.randShotSel), Settings.randVolPct) { if (state == GO) finish(app) }
+            } catch (e: Exception) { finish(app) }
+        }
     }
 
     /** Fin normale de la séquence (coup de feu joué). */

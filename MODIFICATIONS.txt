@@ -34,6 +34,8 @@ Départ random (tout en bas de la page Suivi avancé ; sous-réglages visibles s
 - Réglages : Attente min / max (0 à 60 s, entiers, min <= max garanti), Volume (0-100 % du maximum du flux ALARME ; le volume d'origine est
   restauré à la fin du son, à l'annulation, ou au lancement suivant si le processus a été tué), « Chrono figé pendant l'attente » (défaut ON),
   choix des sons : À vos marques (3 voix selon la langue), Prêts (3 voix), Coup de feu (5 sons). Un appui sur un choix le sélectionne ET le joue.
+- Synchro coup de feu / chrono : pistes de tir coupées pile sur l'attaque (WAV), lecteur préparé pendant l'attente, son lancé AVANT le chrono
+  (standard athlétisme : le chrono part au début du signal).
 - Pendant l'attente, le texte remplace le chrono ; le bouton (physique ou écran) ANNULE l'attente (pas de coup de feu).
 - Au coup de feu : son + chrono (re)démarre + tour automatique (sauf pour la toute première répétition, un tour à 0:00 n'a pas de sens) +
   objectifs re-synchronisés.
