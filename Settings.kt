@@ -89,10 +89,10 @@ class SliderState(
     /** Échelle « liste log » de valeurs rondes : 0 = non, 1 = temps (secondes), 2 = distance (mètres). Le 1er cran est 0. */
     val nice: Int = 0,
     /** Pas de sous-menu min/max (appui long = explication seule). */
-    val noRange: Boolean = false,
-    /** Contrainte appliquée après chaque réglage au curseur (ex. min <= max du départ random) ; null = aucune. */
-    val clampTo: ((Float) -> Float)? = null
+    val noRange: Boolean = false
 ) {
+    /** Contrainte appliquée après chaque réglage au curseur (ex. min <= max du départ random) ; null = aucune. Affectée après la création (pas de référence croisée à l'initialisation). */
+    var clampTo: ((Float) -> Float)? = null
     var value by mutableFloatStateOf(def)
     var lo by mutableFloatStateOf(min0)
     var hi by mutableFloatStateOf(max0)
@@ -372,13 +372,15 @@ object Settings {
 
     // Départ random : attente min / max (0..60 s, entiers, min <= max garanti à chaque réglage), volume 0..100 %. Pas de sous-menu min/max.
     val randMin: SliderState = SliderState(
-        "randMin", S.RAND_MIN, 0f, 60f, 2f, stepProvider = { 1f }, kind = 1, isInt = true, noRange = true,
-        clampTo = { v -> minOf(v, randMax.value) }
+        "randMin", S.RAND_MIN, 0f, 60f, 2f, stepProvider = { 1f }, kind = 1, isInt = true, noRange = true
     )
     val randMax: SliderState = SliderState(
-        "randMax", S.RAND_MAX, 0f, 60f, 5f, stepProvider = { 1f }, kind = 1, isInt = true, noRange = true,
-        clampTo = { v -> maxOf(v, randMin.value) }
+        "randMax", S.RAND_MAX, 0f, 60f, 5f, stepProvider = { 1f }, kind = 1, isInt = true, noRange = true
     )
+    init {
+        randMin.clampTo = { v: Float -> minOf(v, randMax.value) }
+        randMax.clampTo = { v: Float -> maxOf(v, randMin.value) }
+    }
     val randVol = SliderState("randVol", S.RAND_VOL, 0f, 100f, 100f, stepProvider = { 1f }, isInt = true, noRange = true)
 
     val sliders: List<SliderState> = listOf(
