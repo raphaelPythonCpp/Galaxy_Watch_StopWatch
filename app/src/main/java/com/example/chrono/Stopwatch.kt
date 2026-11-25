@@ -9,9 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.media.AudioAttributes
+import android.os.Build
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -55,7 +57,7 @@ object Stopwatch {
     private fun prefs(c: Context): SharedPreferences =
         c.applicationContext.getSharedPreferences("stopwatch", Context.MODE_PRIVATE)
     private fun lapFile(c: Context) = File(c.applicationContext.filesDir, "laps.log")
-    private fun limitMs(): Long = Settings.autoStopMin * 60_000L
+    private fun limitMs(): Long = Settings.autoStopSec * 1000L
     private fun lapsString() = laps.joinToString(";") { "${it.index},${it.lapTime},${it.total}" }
 
     /** Durée écoulée depuis le dernier Start : horloge monotone si possible, sinon heure murale. */
@@ -67,11 +69,33 @@ object Stopwatch {
         return (now() - startedAt).coerceAtLeast(0L)
     }
 
-    /** Temps écoulé ; plafonné à la limite d'arrêt automatique si elle est active. */
-    fun elapsed(): Long {
-        val raw = (accumulated + if (running) runDelta() else 0L).coerceAtLeast(0L)
+    /**
+     * Dernière interaction, en TEMPS DE CHRONO (ms) : lancement / reprise, tour manuel, annulation de tour (et, plus tard, coup de feu
+     * du départ random). L'arrêt automatique survient quand (temps - lastAct) > limite ; le temps est alors figé à lastAct + limite.
+     * Persisté (clé « lastAct », nouvelle en v14) ; remis à 0 par la remise à zéro.
+     */
+    private var lastAct = 0L
+
+    /** Temps de chrono brut (non plafonné). */
+    private fun rawElapsed(): Long = (accumulated + if (running) runDelta() else 0L).coerceAtLeast(0L)
+
+    /** Temps de chrono auquel l'arrêt automatique se déclenche (lastAct + limite), ou -1 s'il est désactivé. */
+    private fun autoStopAt(): Long {
         val lim = limitMs()
-        return if (running && lim > 0L) minOf(raw, lim) else raw
+        return if (lim > 0L) lastAct + lim else -1L
+    }
+
+    /** Temps écoulé ; plafonné au point d'arrêt automatique si l'arrêt est actif (jamais d'affichage au-delà). */
+    fun elapsed(): Long {
+        val raw = rawElapsed()
+        val stopAt = autoStopAt()
+        return if (running && stopAt > 0L) minOf(raw, stopAt) else raw
+    }
+
+    /** Enregistre une interaction (au temps de chrono t) et persiste. */
+    private fun touch(c: Context, t: Long) {
+        lastAct = t
+        try { prefs(c).edit().putLong("lastAct", t).apply() } catch (e: Exception) { }
     }
 
     fun load(c: Context) {
@@ -82,6 +106,7 @@ object Stopwatch {
             val p = prefs(c)
             running = p.getBoolean("run", false)
             accumulated = p.getLong("acc", 0L)
+            lastAct = p.getLong("lastAct", accumulated).coerceAtLeast(0L)   // état v13 : repart de la reprise
             startedAt = p.getLong("start", 0L)
             startedEl = p.getLong("startEl", 0L)
             startedBoot = p.getInt("startBoot", -1)
@@ -96,11 +121,15 @@ object Stopwatch {
                 laps.add(Lap(f[0].toInt(), f[1].toLong(), f[2].toLong()))
             }
         } catch (e: Exception) {
-            running = false; accumulated = 0L; startedAt = 0L; startedEl = 0L; sameBoot = false; laps.clear(); lapsInFile = false
+            running = false; accumulated = 0L; lastAct = 0L; startedAt = 0L; startedEl = 0L; sameBoot = false; laps.clear(); lapsInFile = false
         }
         checkForcedStop(c)
+        RandomStart.load(c)      // branche l'écouteur de frontières ; une attente de départ random interrompue par un redémarrage est annulée
         enforceAutoStop(c)
-        if (running) Segments.schedule(c)
+        if (running) {
+            scheduleAutoStop(c)      // réarme l'arrêt auto (réglage changé / alarme perdue)
+            Segments.schedule(c)     // réarme l'alarme de la prochaine frontière d'objectif + couche « premier plan »
+        }
     }
 
     // ------------------------------------------------------------ arrêt forcé / fermeture de l'appli
@@ -207,14 +236,25 @@ object Stopwatch {
         )
     }
 
+    /**
+     * (Re)pose l'alarme d'arrêt auto à l'instant lastAct + limite (+ 5 ms pour que « temps - lastAct > limite » soit vrai à la réception).
+     * À appeler à chaque interaction (start / reprise, tour, annulation de tour), au chargement et quand le réglage change.
+     * Même PendingIntent => remplace l'alarme précédente. Réglage à 0 ou chrono arrêté => alarme annulée.
+     */
     private fun scheduleAutoStop(c: Context) {
-        val lim = limitMs()
-        if (lim <= 0L || !running) return
+        val stopAt = autoStopAt()
+        if (!running || stopAt < 0L) { cancelAutoStop(c); return }
         try {
-            val at = now() + (lim - elapsed()).coerceAtLeast(0L)
-            c.applicationContext.getSystemService(AlarmManager::class.java)
-                ?.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarmPi(c))
+            val at = now() + (stopAt - rawElapsed()).coerceAtLeast(0L) + 5L
+            Segments.armExact(c, at, alarmPi(c), 5)
         } catch (e: Exception) { }
+    }
+
+    /** Point d'entrée public (appelé au relâchement d'un curseur) : applique tout de suite un nouveau réglage d'arrêt auto. */
+    fun rescheduleAutoStop(c: Context) {
+        if (!running) return
+        enforceAutoStop(c)
+        if (running) scheduleAutoStop(c)
     }
 
     private fun cancelAutoStop(c: Context) {
@@ -222,20 +262,37 @@ object Stopwatch {
         catch (e: Exception) { }
     }
 
-    /** Arrête le chrono s'il a atteint la limite d'arrêt automatique (temps figé exactement à la limite). */
+    /** Dernier instant (horloge monotone) où la vibration d'arrêt auto a été donnée : garde anti-rafale. */
+    private var lastAutoBuzzEl = -1_000_000L
+
+    /** UNE seule vibration d'arrêt auto : jamais deux à moins de 1,5 s, quel que soit le nombre d'appelants. */
+    private fun buzzAutoStop(c: Context) {
+        val t = SystemClock.elapsedRealtime()
+        if (t - lastAutoBuzzEl < 1500L) return
+        lastAutoBuzzEl = t
+        buzz(c, true, alarm = !Segments.uiVisible)
+    }
+
+    /**
+     * Arrête le chrono quand (temps - dernière interaction) > limite ; le temps est figé EXACTEMENT à lastAct + limite
+     * (même si l'on s'en aperçoit plus tard : alarme retardée, écran éteint, rechargement). Idempotent : ne fait rien si
+     * le chrono est déjà arrêté (l'état est écrit en commit() avant la vibration), donc une seule vibration.
+     * Appelée par la boucle d'affichage, onStart, AutoStopReceiver, load(), lap(), et au relâchement du curseur.
+     * La séance enregistrée dans l'historique (Reset / Terminer) utilise ce temps figé.
+     */
     fun enforceAutoStop(c: Context) {
-        val lim = limitMs()
-        if (!running || lim <= 0L) return
-        val raw = accumulated + runDelta()
-        if (raw >= lim) {
-            accumulated = lim; running = false; startedAt = 0L; startedEl = 0L; sameBoot = false
-            save(c, true)
-            Ongoing.hide(c)
-            cancelAutoStop(c)
-            Segments.cancel(c)
-            disarmSentinel(c)
-            buzz(c, true, alarm = true)       // peut venir d'une alarme : usage « alarme » pour vibrer en arrière-plan
-        }
+        if (!running) return
+        val stopAt = autoStopAt()
+        if (stopAt < 0L) return
+        if (rawElapsed() <= stopAt) return
+        accumulated = stopAt; running = false; startedAt = 0L; startedEl = 0L; sameBoot = false
+        save(c, true)
+        Ongoing.hide(c)
+        cancelAutoStop(c)
+        RandomStart.cancel(c, false)           // chrono arrêté pendant une attente non figée : plus de coup de feu
+        Segments.cancel(c)
+        disarmSentinel(c)
+        buzzAutoStop(c)
     }
 
     // ------------------------------------------------------------ stockage des tours
@@ -286,6 +343,7 @@ object Stopwatch {
         val e = prefs(app).edit()
             .putBoolean("run", running)
             .putLong("acc", accumulated)
+            .putLong("lastAct", lastAct)
             .putLong("start", startedAt)
             .putLong("startEl", startedEl)
             .putInt("startBoot", startedBoot)
@@ -316,10 +374,21 @@ object Stopwatch {
 
     // ------------------------------------------------------------ actions
 
+    /** Start. Départ random activé et séance neuve : le chrono ne démarre pas ici mais au coup de feu (RandomStart.tryStart). */
     fun start(c: Context) {
+        if (running || RandomStart.waiting) return
+        if (RandomStart.tryStart(c)) return
+        startImmediately(c)
+    }
+
+    /** Démarrage réel du chrono (Start normal, ou départ random non figé : le chrono tourne pendant l'attente). */
+    fun startImmediately(c: Context) {
         if (running) return
+        val fresh = accumulated == 0L
         startedAt = now(); startedEl = SystemClock.elapsedRealtime(); startedBoot = bootCount(c)
         sameBoot = true; running = true
+        lastAct = accumulated                  // lancement / reprise = interaction (arrêt auto décompté depuis ici)
+        if (fresh) Segments.resetProgress(c)   // nouvelle séance : aucune frontière d'objectif déjà vibrée
         buzz(c, true); save(c, true)
         Ongoing.show(c, now() - elapsed())
         scheduleAutoStop(c)
@@ -330,15 +399,20 @@ object Stopwatch {
 
     fun stop(c: Context) {
         if (!running) return
+        enforceAutoStop(c)                     // limite déjà dépassée : le temps est figé à la limite, pas à « maintenant »
+        if (!running) return
         accumulated += runDelta(); running = false; startedEl = 0L; sameBoot = false
         buzz(c, true); save(c, true)
         Ongoing.hide(c)
         cancelAutoStop(c)
+        RandomStart.cancel(c, false)
         Segments.cancel(c)
         disarmSentinel(c)
     }
 
     fun lap(c: Context) {
+        if (!running || RandomStart.waiting) return     // pas de tour manuel pendant l'attente d'un départ random
+        enforceAutoStop(c)                     // si la limite est déjà dépassée, le chrono s'arrête et aucun tour n'est ajouté
         if (!running) return
         syncLapStore(c)
         val t = elapsed()
@@ -346,16 +420,22 @@ object Stopwatch {
         val lap = Lap(laps.size + 1, t - last, t)
         laps.add(0, lap)
         writeLapLine(c, "L,${lap.index},${lap.lapTime},${lap.total}")
+        touch(c, t)                            // interaction : l'arrêt auto repart de ce tour
         buzz(c, false)
+        scheduleAutoStop(c)
         if (Settings.trackRecal) Segments.schedule(c)      // le tour décale les objectifs suivants
     }
 
     /** Retire le dernier tour enregistré (le chrono continue). */
     fun undoLap(c: Context) {
-        if (laps.isEmpty()) return
+        if (laps.isEmpty() || RandomStart.waiting) return
         syncLapStore(c)
         laps.removeAt(0)
         writeLapLine(c, "U")
+        if (running) {                          // annuler un tour compte comme une interaction (maintenant)
+            enforceAutoStop(c)
+            if (running) { touch(c, elapsed()); scheduleAutoStop(c) }
+        }
         buzz(c, false)
         if (Settings.trackRecal) Segments.schedule(c)      // le décalage de ce tour est annulé
     }
@@ -369,6 +449,8 @@ object Stopwatch {
         if (running) {
             if (at == null) accumulated += runDelta()
             else { accumulated += (at - startedAt).coerceAtLeast(0L); ts = at }
+            val cap = autoStopAt()                  // l'arrêt auto avait peut-être déjà dû se produire : temps figé à lastAct + limite
+            if (cap >= 0L && accumulated > cap) accumulated = cap
             running = false
         } else if (at != null) ts = at
         finishReset(c, !silent, ts)
@@ -384,12 +466,14 @@ object Stopwatch {
     }
 
     private fun finishReset(c: Context, vibrate: Boolean, ts: Long, saveSession: Boolean = true) {
+        RandomStart.cancel(c, false)            // séquence de départ random éventuelle : sons stoppés, volume restauré (l'attente n'entre jamais dans l'historique)
         if (saveSession && !running && accumulated > 0L) {
             History.add(c, Session(ts, accumulated, laps.reversed().map { it.lapTime }))
         }
-        running = false; accumulated = 0L; startedAt = 0L; startedEl = 0L; sameBoot = false; laps.clear()
+        running = false; accumulated = 0L; lastAct = 0L; startedAt = 0L; startedEl = 0L; sameBoot = false; laps.clear()
         try { lapFile(c).delete() } catch (e: Exception) { }
         lapsInFile = false
+        Segments.resetProgress(c)               // remise à zéro : plus aucune frontière vibrée
         if (vibrate) buzz(c, true)
         save(c, true)
         Ongoing.hide(c)
@@ -398,9 +482,78 @@ object Stopwatch {
         disarmSentinel(c)
     }
 
-    fun toggle(c: Context) { if (running) stop(c) else start(c) }
-    /** Bouton physique : tour si en marche, sinon start. */
-    fun primary(c: Context) { if (running) lap(c) else start(c) }
+    /** Pendant l'attente d'un départ random, tout appui sur Start / Stop / bouton physique ANNULE l'attente (aucun coup de feu). */
+    fun toggle(c: Context) {
+        if (RandomStart.waiting) { RandomStart.cancel(c, true); return }
+        if (running) stop(c) else start(c)
+    }
+    /** Bouton physique : tour si en marche, sinon start ; annule l'attente d'un départ random. */
+    fun primary(c: Context) {
+        if (RandomStart.waiting) { RandomStart.cancel(c, true); return }
+        if (running) lap(c) else start(c)
+    }
+
+    // ------------------------------------------------------------ départ random (appelé par RandomStart)
+
+    /** Republie l'état (tile, complication, préférences) sans le modifier. */
+    fun publish(c: Context) { save(c, true) }
+
+    /** Fige le chrono EXACTEMENT au temps t (frontière) pendant l'attente : « running » interne = faux, plus aucun arrêt auto, plus d'alarme. */
+    fun freezeAt(c: Context, t: Long) {
+        if (!running) return
+        accumulated = t.coerceAtLeast(0L); running = false; startedAt = 0L; startedEl = 0L; sameBoot = false
+        save(c, true)
+        cancelAutoStop(c)
+        Ongoing.show(c, 0L, RandomStart.ongoingText())
+    }
+
+    /**
+     * Coup de feu. frozen = le chrono était figé : reprise à accumulated. Sinon il tournait : on vérifie qu'il tourne encore.
+     * Ajoute un tour automatique (sauf à 0:00), compte comme interaction (arrêt auto), vibre (départ). Renvoie le temps de chrono du tir,
+     * ou -1 si le chrono ne peut pas (re)démarrer (déjà arrêté : aucun tir).
+     */
+    fun randomShot(c: Context, frozen: Boolean): Long {
+        if (frozen) {
+            if (running) return -1L
+            startedAt = now(); startedEl = SystemClock.elapsedRealtime(); startedBoot = bootCount(c)
+            sameBoot = true; running = true
+            lastAct = accumulated
+        } else {
+            if (!running) return -1L
+            enforceAutoStop(c)
+            if (!running) return -1L
+        }
+        // Chrono figé : le tir a lieu EXACTEMENT au temps figé (sinon 1 ms écoulé depuis la reprise créerait un tour parasite à 0:00.001)
+        val t = if (frozen) accumulated else elapsed()
+        if (t > 0L) {
+            syncLapStore(c)
+            val last = laps.firstOrNull()?.total ?: 0L
+            val lap = Lap(laps.size + 1, t - last, t)
+            laps.add(0, lap)
+            try { writeLapLine(c, "L,${lap.index},${lap.lapTime},${lap.total}") } catch (e: Exception) { }
+        }
+        touch(c, t)
+        save(c, frozen)
+        if (frozen) {
+            Ongoing.show(c, now() - elapsed())
+            armSentinel(c)
+            markSeen(c)
+        }
+        scheduleAutoStop(c)
+        buzz(c, true, alarm = !Segments.uiVisible)
+        return t
+    }
+
+    /** Annulation de l'attente par l'utilisateur : le chrono est (ou reste) arrêté, rien n'est enregistré de l'attente. */
+    fun haltForCancel(c: Context, vibrate: Boolean = true) {
+        if (running) { stop(c); return }       // chrono non figé : arrêt normal
+        save(c, true)
+        Ongoing.hide(c)
+        cancelAutoStop(c)
+        Segments.cancel(c)                      // alarme de frontière restée posée pendant l'attente figée (+ service s'il n'est plus utile)
+        disarmSentinel(c)
+        if (vibrate) buzz(c, false)
+    }
 
     /** Usage « alarme » : sans lui, le système ignore les vibrations d'une appli qui n'est pas au premier plan (écran éteint, alarme d'objectif). */
     private val alarmAttrs: AudioAttributes by lazy {
@@ -415,23 +568,58 @@ object Stopwatch {
      * alarm = true pour les vibrations déclenchées hors de l'appli (objectifs du suivi avancé, arrêt automatique) :
      * Android 10+ n'autorise une vibration d'arrière-plan que pour les usages alarme / sonnerie / notification.
      */
-    @Suppress("DEPRECATION")
     fun buzz(c: Context, strong: Boolean, alarm: Boolean = false) {
+        buzzLogged(c, strong, alarm)
+    }
+
+    /** Vibreur du système : VibratorManager (API 31+) puis service Vibrator classique ; null si introuvable. */
+    private fun vibrator(c: Context): Vibrator? {
+        val app = c.applicationContext
         try {
-            Settings.load(c)
-            val pct = Settings.vibePct
-            if (pct <= 0.05f) return
-            val v = c.getSystemService(Vibrator::class.java) ?: return
-            fun amp(base: Int) = (base * pct / 100f).roundToInt().coerceIn(1, 255)
-            val effect = if (Settings.eco) {
-                VibrationEffect.createOneShot(if (strong) 80 else 40, amp(200))
+            if (Build.VERSION.SDK_INT >= 31) {
+                val vm = app.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                val d = vm?.defaultVibrator
+                if (d != null) return d
+            }
+        } catch (e: Exception) { }
+        return try { app.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator } catch (e: Exception) { null }
+    }
+
+    /**
+     * Vibration ROBUSTE ; renvoie le chemin réellement utilisé (pour le journal de diagnostic) : "off" (intensité 0), "novib" (pas de vibreur),
+     * "alarm+plain" / "alarm" (attributs d'usage alarme ; si alarm = true on appelle AUSSI la vibration simple juste après : le système
+     * ignore la seconde si la première joue déjà, car l'usage alarme est prioritaire, et elle sauve le coup si l'usage alarme est
+     * refusé par le réglage / l'OEM), "plain" (vibration simple), "legacy" (durée seule), "fail". Jamais d'exception.
+     */
+    @Suppress("DEPRECATION")
+    fun buzzLogged(c: Context, strong: Boolean, alarm: Boolean = false): String {
+        try { Settings.load(c) } catch (e: Exception) { }
+        val pct = try { Settings.vibePct } catch (e: Exception) { 100f }
+        if (pct <= 0.05f) return "off"
+        val v = vibrator(c) ?: return "novib"
+        fun amp(base: Int) = (base * pct / 100f).roundToInt().coerceIn(1, 255)
+        val effect: VibrationEffect? = try {
+            if (Settings.eco) {
+                VibrationEffect.createOneShot(if (strong) 80L else 40L, amp(200))
             } else if (strong) {
                 VibrationEffect.createWaveform(longArrayOf(0, 140, 70, 140), intArrayOf(0, amp(255), 0, amp(255)), -1)
             } else {
-                VibrationEffect.createOneShot(55, amp(190))
+                VibrationEffect.createOneShot(55L, amp(190))
             }
-            if (alarm) v.vibrate(effect, alarmAttrs) else v.vibrate(effect)
-        } catch (e: Exception) { }
+        } catch (e: Exception) { null }
+        if (effect != null) {
+            var alarmOk = false
+            if (alarm) {
+                try { v.vibrate(effect, alarmAttrs); alarmOk = true } catch (e: Exception) { }
+            }
+            try {
+                v.vibrate(effect)
+                return if (alarm) (if (alarmOk) "alarm+plain" else "plain(repli)") else "plain"
+            } catch (e: Exception) { }
+            if (alarmOk) return "alarm"
+        }
+        try { v.vibrate(if (strong) 200L else 60L); return "legacy" } catch (e: Exception) { }
+        return "fail"
     }
 }
 

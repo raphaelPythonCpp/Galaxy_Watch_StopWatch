@@ -3,6 +3,11 @@
     <uses-feature android:name="android.hardware.type.watch" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- v14 : wake lock PARTIEL court (<= 2 min) pendant la séquence du départ random, pour que les sons et le coup de feu sortent écran éteint -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- v14 : service de premier plan léger (objectifs qui vibrent) ; type specialUse requis dès targetSdk 34 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:label="@string/app_name"
@@ -146,6 +151,16 @@
         <receiver android:name=".AutoStopReceiver" android:exported="false" />
         <receiver android:name=".SegmentReceiver" android:exported="false" />
         <receiver android:name=".SentinelReceiver" android:exported="false" />
+        <receiver android:name=".RandomStartReceiver" android:exported="false" />
+
+        <service
+            android:name=".GoalService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Garde appli active pour que les vibrations des objectifs du chronometre fonctionnent ecran eteint" />
+        </service>
 
         <service
             android:name=".StopwatchTileService"

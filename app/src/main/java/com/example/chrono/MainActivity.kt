@@ -87,13 +87,22 @@ class MainActivity : ComponentActivity() {
         lastWake = SystemClock.uptimeMillis()
         Ui.wake()
         checkAutoUnlock()
+        Segments.uiVisible = true
         Stopwatch.enforceAutoStop(this)
+        Segments.check(this, "onStart")      // frontière franchie pendant l'absence (vibre seulement si très récente)
     }
 
     override fun onStop() {
+        Segments.uiVisible = false
+        RandomStart.stopPreview()            // aperçu d'un son : arrêté, volume restauré
         Ui.hold = 0f
         Stopwatch.markSeen(this)
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        RandomStart.stopPreview()
+        super.onDestroy()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -167,6 +176,7 @@ fun App() {
     val availW = (cfg.screenWidthDp * Settings.lapWidthPct / 100f).dp
     val now = remember { mutableLongStateOf(Stopwatch.elapsed()) }
     val running = Stopwatch.running
+    val waiting = RandomStart.waiting         // attente d'un départ random (chrono figé ou non) : bouton = annuler, texte à la place du chrono
     val acc = Stopwatch.accumulated
     val ambient = Ui.ambient
     val eco = Settings.eco
@@ -182,6 +192,7 @@ fun App() {
             while (true) {
                 withFrameMillis { now.longValue = Stopwatch.elapsed() }
                 Stopwatch.enforceAutoStop(ctx)
+                Segments.check(ctx, "ui")          // couche « premier plan » des vibrations d'objectifs (dédoublonnée)
                 delay(step - Stopwatch.elapsed() % step)
             }
         }
@@ -189,9 +200,9 @@ fun App() {
 
     // Verrou tactile : s'enclenche seulement quand on DÉMARRE le chrono pendant cette session de l'appli
     var wasRunning by remember { mutableStateOf(running) }
-    LaunchedEffect(running) {
+    LaunchedEffect(running, waiting) {
         if (running && !wasRunning && Settings.lock) Ui.locked = true
-        if (!running) Ui.locked = false
+        if (!running && !waiting) Ui.locked = false     // pendant une attente figée, le verrou reste en place
         wasRunning = running
     }
 
@@ -209,7 +220,7 @@ fun App() {
 
     // Affichage permanent (logiciel) : l'écran reste allumé tant que le chrono tourne ou affiche un temps. Après le délai
     // réglé sans interaction, veille douce : noir, chiffres gris, luminosité minimale (un toucher ou le bouton réveille).
-    val keepOn = Settings.aodActive && (running || acc > 0L)
+    val keepOn = Settings.aodActive && (running || acc > 0L || waiting)
     LaunchedEffect(keepOn) {
         val w = (ctx as? Activity)?.window
         if (keepOn) w?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -256,7 +267,7 @@ fun App() {
     val cols = rememberLapCols(laps, true, Settings.textSp)
     // Bague : 1 tour = 1' au départ, puis = meilleur tour ; avec un objectif d'exercice, = le segment en cours
     val ringRef = if (laps.isEmpty()) 60_000L else stats.min.coerceAtLeast(1L)
-    val idle = !running && acc == 0L
+    val idle = !running && acc == 0L && !waiting
     val topF = Settings.topPct / 100f
     val showTop = topF > 0.04f
     val showBottom = topF < 0.96f
@@ -339,7 +350,7 @@ fun App() {
                                 contentAlignment = Alignment.BottomCenter
                             ) {
                                 Box(Modifier.wrapContentSize(Alignment.BottomCenter, unbounded = true)) {
-                                    Header(now, running, !running && acc > 0L, eco, pal, laps.isNotEmpty(), hDp)
+                                    Header(now, running || waiting, !running && !waiting && acc > 0L, eco, pal, laps.isNotEmpty(), hDp)
                                 }
                             }
                         }
@@ -471,12 +482,12 @@ fun Header(now: MutableLongState, running: Boolean, finished: Boolean, eco: Bool
         if (finished) {
             HoldButton(S.DELETE_SHORT.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp) { Stopwatch.discard(ctx) }
         } else {
-            RoundButton(S.UNDO.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp, hasLaps) { Stopwatch.undoLap(ctx) }
+            RoundButton(S.UNDO.t(), bs, SurfaceBtn, Fg, (bs.value * 0.19f).sp, hasLaps && !RandomStart.waiting) { Stopwatch.undoLap(ctx) }
         }
     }
     val left: @Composable () -> Unit = {
         if (running) {
-            RoundButton(S.LAP.t(), bs, SurfaceBtn, Fg, fs) { Stopwatch.lap(ctx) }
+            RoundButton(S.LAP.t(), bs, SurfaceBtn, Fg, fs, !RandomStart.waiting) { Stopwatch.lap(ctx) }
         } else {
             // Reset protégé : maintenir (temps réglable) ; la vibration est déjà donnée par l'appui long
             if (finished) HoldButton(S.FINISH.t(), bs, SurfaceBtn, Fg, (fs.value * 0.8f).sp) { Stopwatch.reset(ctx, false) }
@@ -494,7 +505,7 @@ fun Header(now: MutableLongState, running: Boolean, finished: Boolean, eco: Bool
     val shown = if (Settings.lefty) order.reversed() else order
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        TimeText(now, eco)
+        if (RandomStart.waiting) WaitText() else TimeText(now, eco)
         Row(
             Modifier.layout { m, c ->
                 val p = m.measure(c)

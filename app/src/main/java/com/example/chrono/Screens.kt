@@ -260,14 +260,14 @@ fun SettingsScreen() {
             }
             item {
                 SliderRow(Settings.autoStop, accent,
-                    fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur((v * 60f).roundToInt()) })
+                    fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur(v.roundToInt()) })
             }
         }
 
         // ---------------- À propos
         item {
             Column(Modifier.padding(top = 10.dp, bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Super StopWatch  v13", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
+                Text("Super StopWatch  v14", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
                 Text(S.ABOUT_BY.t(), fontSize = 9.sp, color = Dim, textAlign = TextAlign.Center)
             }
         }
@@ -307,9 +307,15 @@ fun RangeScreen() {
             }
             item {
                 SliderBar(
-                    S.MIN.t(), spec.display(spec.lo, step0), (spec.lo - spec.min0) / span, accent, true,
+                    S.MIN.t(), spec.display(spec.lo, step0),
+                    if (spec.nice > 0) spec.rangeFraction(spec.lo) else (spec.lo - spec.min0) / span, accent, true,
                     { Settings.persistSliders(ctx) }, null
                 ) { f ->
+                    if (spec.nice > 0) {
+                        val nv = spec.rangeValue(f)
+                        spec.setRange(if (nv >= spec.hi) spec.niceBelow(spec.hi) else nv, spec.hi)
+                        return@SliderBar
+                    }
                     val n = (f * 100f).roundToInt()
                     val v = spec.fixRange(spec.min0 + n / 100f * span)      // entier pour un curseur entier
                     spec.setRange(minOf(v, spec.hi - step0).coerceAtLeast(spec.min0), spec.hi)
@@ -317,9 +323,15 @@ fun RangeScreen() {
             }
             item {
                 SliderBar(
-                    S.MAX.t(), spec.display(spec.hi, step0), (spec.hi - spec.min0) / span, accent, true,
+                    S.MAX.t(), spec.display(spec.hi, step0),
+                    if (spec.nice > 0) spec.rangeFraction(spec.hi) else (spec.hi - spec.min0) / span, accent, true,
                     { Settings.persistSliders(ctx) }, null
                 ) { f ->
+                    if (spec.nice > 0) {
+                        val nv = spec.rangeValue(f)
+                        spec.setRange(spec.lo, if (nv <= spec.lo) spec.niceAbove(spec.lo) else nv)
+                        return@SliderBar
+                    }
                     val n = (f * 100f).roundToInt()
                     val v = spec.fixRange(spec.min0 + n / 100f * span)
                     spec.setRange(spec.lo, maxOf(v, spec.lo + step0).coerceAtMost(spec.max0))
@@ -367,15 +379,23 @@ fun TrackScreen() {
     val eco = Settings.eco
     val pal = remember(Settings.rgb) { makePalette(Settings.rgb) }
     val accent = if (eco) Fg else pal.accent
+    val onAcc = if (eco) Bg else pal.onAccent
     val resched: () -> Unit = { Segments.schedule(ctx) }
     val listState = rememberSavedListState(Screen.TRACK)
 
     ScalingLazyColumn(Modifier.fillMaxSize(), state = listState, horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text(S.TRACK.t(), fontSize = 14.sp, color = Dim) }
         // Les deux précisions en haut : la précision distance règle le pas de tous les curseurs de distance, la précision temps celui de tous les curseurs de temps
-        item { SliderRow(Settings.precisionDist, accent, unit = " m") }
-        item { SliderRow(Settings.precisionTime, accent) }
-        item { SliderRow(Settings.distance, accent, unit = " m") }
+        item {
+            SliderRow(Settings.precisionDist, accent,
+                fmt = { v -> if (v < 0.05f) S.NONE.t() else fmtDist(v) })
+        }
+        item {
+            SliderRow(Settings.precisionTime, accent,
+                fmt = { v -> if (v < 0.5f) S.NONE.t() else fmtDur(v.roundToInt()) },
+                onRelease = resched)
+        }
+        item { SliderRow(Settings.distance, accent, fmt = { v -> if (v < 0.05f) S.OFF.t() else fmtDist(v) }) }
         item {
             SliderRow(
                 Settings.exTime, accent,
@@ -384,9 +404,75 @@ fun TrackScreen() {
             )
         }
         item { SliderRow(Settings.nbRep, accent, unit = " ×", onRelease = resched) }
-        item { SliderRow(Settings.restTime, accent, onRelease = resched) }
+        item {
+            SliderRow(
+                Settings.restTime, accent,
+                fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur(v.roundToInt()) },
+                onRelease = resched
+            )
+        }
         item { ToggleRow(S.TRACK_VIBE.t(), Settings.trackVibe, true, accent, "trackVibe") { Settings.setTrackVibe(ctx, it) } }
         item { ToggleRow(S.TRACK_RECAL.t(), Settings.trackRecal, true, accent, "trackRecal") { Settings.setTrackRecal(ctx, it) } }
+
+        // ---------------- Départ random (tout en bas) : sous-réglages visibles seulement si ON
+        item { ToggleRow(S.RAND_START.t(), Settings.randStart, true, accent, "randStart") { Settings.updateRandStart(ctx, it) } }
+        if (Settings.randStart) {
+            item { SliderRow(Settings.randMin, accent, quiet = true) }
+            item { SliderRow(Settings.randMax, accent, quiet = true) }
+            item {
+                SliderRow(
+                    Settings.randVol, accent, unit = " %", quiet = true,
+                    onRelease = { RandomStart.preview(ctx, 2, Settings.randShotSel) }   // aperçu au volume réglé
+                )
+            }
+            item { ToggleRow(S.RAND_FREEZE.t(), Settings.randFreeze, true, accent, "randFreeze") { Settings.updateRandFreeze(ctx, it) } }
+            item {
+                SoundChoiceRow(S.RAND_MARKS.t(), 3, Settings.randMarksSel, accent, onAcc, "randMarks") { n ->
+                    Settings.updateRandSound(ctx, 0, n); RandomStart.preview(ctx, 0, n)
+                }
+            }
+            item {
+                SoundChoiceRow(S.RAND_READY.t(), 3, Settings.randReadySel, accent, onAcc, "randReady") { n ->
+                    Settings.updateRandSound(ctx, 1, n); RandomStart.preview(ctx, 1, n)
+                }
+            }
+            item {
+                SoundChoiceRow(S.RAND_SHOT.t(), 5, Settings.randShotSel, accent, onAcc, "randShot") { n ->
+                    Settings.updateRandSound(ctx, 2, n); RandomStart.preview(ctx, 2, n)
+                }
+            }
+        }
+    }
+}
+
+/** Rangée de choix d'un son : petits boutons numérotés ; un appui sélectionne ET joue (onPick), un appui long ouvre l'explication (info). */
+@Composable
+private fun SoundChoiceRow(
+    label: String, count: Int, selected: Int, accent: Color, onAccent: Color, info: String, onPick: (Int) -> Unit
+) {
+    Column(
+        Modifier.fillMaxWidth(0.92f)
+            .clip(RoundedCornerShape(20.dp))
+            .background(RowBg)
+            .tapOrHold(onTap = { }, onHold = { Ui.openInfo(info) })
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(label, fontSize = 12.sp, color = Fg)
+        Spacer(Modifier.height(5.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (i in 1..count) {
+                val on = i == selected
+                Box(
+                    Modifier.weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (on) accent else SurfaceBtn)
+                        .tapOrHold(onTap = { onPick(i) }, onHold = { Ui.openInfo(info) })
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text(i.toString(), fontSize = 12.sp, color = if (on) onAccent else Fg) }
+            }
+        }
     }
 }
 

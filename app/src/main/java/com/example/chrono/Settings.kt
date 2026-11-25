@@ -31,6 +31,39 @@ fun fmtDur(sec: Int, zero: String = "0 s"): String {
     }
 }
 
+/** Valeurs « jolies » des curseurs en échelle log (le 0 est toujours le 1er cran). Temps en secondes, distances en mètres. */
+object NiceValues {
+    val time: List<Float> = listOf(
+        0f, 1f, 2f, 3f, 4f, 5f, 6f, 8f, 10f, 12f, 15f, 20f, 25f, 30f, 40f, 45f, 50f,
+        60f, 75f, 90f, 120f, 150f, 180f, 240f, 300f, 360f, 420f, 480f, 540f, 600f, 720f, 900f,
+        1200f, 1500f, 1800f, 2400f, 2700f, 3000f, 3600f, 4500f, 5400f, 7200f, 9000f, 10800f,
+        14400f, 18000f, 21600f, 28800f, 36000f, 43200f, 57600f, 72000f, 86400f
+    )
+    val dist: List<Float> = listOf(
+        0f, 0.1f, 0.2f, 0.25f, 0.3f, 0.4f, 0.5f, 0.6f, 0.75f, 0.8f, 1f, 1.5f, 2f, 2.5f, 3f, 4f, 5f, 6f, 7.5f, 8f,
+        10f, 12f, 15f, 20f, 25f, 30f, 40f, 50f, 60f, 75f, 80f, 100f, 110f, 120f, 150f, 200f, 250f, 300f, 400f,
+        500f, 600f, 750f, 800f, 1000f, 1200f, 1500f, 2000f, 2500f, 3000f, 4000f, 5000f, 6000f, 7500f, 8000f,
+        10000f, 12000f, 15000f, 20000f, 25000f, 30000f, 40000f, 50000f, 60000f, 75000f, 80000f, 100000f
+    )
+
+    /** true si v est un multiple (à la tolérance près) du pas ; un pas <= 0 n'impose rien. */
+    fun isMultiple(v: Float, step: Float): Boolean {
+        if (step <= 0f) return true
+        val r = v / step
+        return abs(r - r.roundToInt()) < 1e-3f
+    }
+}
+
+/** Distance jolie : « 400 m », « 2,5 m », « 1,5 km », « 12 km » (virgule en français, point sinon). */
+fun fmtDist(m: Float): String {
+    fun trim(x: Float, decs: Int): String {
+        var s = String.format(Locale.ROOT, "%.${decs}f", x)
+        if (s.contains('.')) s = s.trimEnd('0').trimEnd('.')
+        return if (Settings.lang == Lang.FR) s.replace('.', ',') else s
+    }
+    return if (m < 1000f) trim(m, 2) + " m" else trim(m / 1000f, 3) + " km"
+}
+
 /** Nombre de décimales utiles pour un pas donné : 0 (pas >= 1), 1 (pas >= 0,1) ou 2. */
 private fun decsFor(step: Float): Int = if (step >= 1f) 0 else if (step >= 0.1f) 1 else 2
 
@@ -52,11 +85,62 @@ class SliderState(
     val key: String, val label: S, val min0: Float, val max0: Float, val def: Float,
     val curve: Int = 1, val persistValue: Boolean = true,
     val choices: List<Float>? = null, val stepProvider: (() -> Float)? = null,
-    val kind: Int = 0, val isInt: Boolean = false
+    val kind: Int = 0, val isInt: Boolean = false,
+    /** Échelle « liste log » de valeurs rondes : 0 = non, 1 = temps (secondes), 2 = distance (mètres). Le 1er cran est 0. */
+    val nice: Int = 0,
+    /** Pas de sous-menu min/max (appui long = explication seule). */
+    val noRange: Boolean = false,
+    /** Contrainte appliquée après chaque réglage au curseur (ex. min <= max du départ random) ; null = aucune. */
+    val clampTo: ((Float) -> Float)? = null
 ) {
     var value by mutableFloatStateOf(def)
     var lo by mutableFloatStateOf(min0)
     var hi by mutableFloatStateOf(max0)
+
+    /** Le curseur a un sous-menu min/max. */
+    val hasRange: Boolean get() = choices == null && !noRange
+
+    private fun niceFull(): List<Float> = if (nice == 2) NiceValues.dist else NiceValues.time
+
+    private fun nearestIdx(list: List<Float>, v: Float): Int {
+        var best = 0
+        var bd = Float.MAX_VALUE
+        for (i in list.indices) {
+            val d = abs(list[i] - v)
+            if (d < bd) { bd = d; best = i }
+        }
+        return best
+    }
+
+    /** Valeurs proposées : liste ronde dans [lo, hi], multiples du pas imposé (0 toujours accepté s'il est dans la plage). */
+    private fun niceEff(): List<Float> {
+        val st = stepProvider?.invoke() ?: 0f
+        val out = niceFull().filter { v -> v >= lo - 1e-4f && v <= hi + 1e-4f && (v == 0f || NiceValues.isMultiple(v, st)) }
+        return if (out.isEmpty()) listOf(lo) else out
+    }
+
+    /** Recale la valeur sur la liste effective (après un changement de précision, de plage ou une relecture). */
+    fun snapNice() {
+        if (nice == 0) return
+        val l = niceEff()
+        val n = l[nearestIdx(l, value)]
+        if (n != value) value = n
+    }
+
+    /** Position 0..1 d'une borne du sous-menu min/max sur la liste complète. */
+    fun rangeFraction(v: Float): Float {
+        val l = niceFull()
+        return nearestIdx(l, v) / (l.size - 1f)
+    }
+
+    /** Borne du sous-menu pour une fraction 0..1 : (valeur, true = min / false = max) garantit min < max. */
+    fun rangeValue(f: Float): Float {
+        val l = niceFull()
+        return l[(f.coerceIn(0f, 1f) * (l.size - 1)).roundToInt()]
+    }
+
+    fun niceBelow(v: Float): Float = niceFull().lastOrNull { it < v - 1e-6f } ?: v
+    fun niceAbove(v: Float): Float = niceFull().firstOrNull { it > v + 1e-6f } ?: v
 
     private fun shape(t: Float) = if (curve == 2) t * t else t
     private fun unshape(t: Float) = if (curve == 2) sqrt(t) else t
@@ -74,9 +158,13 @@ class SliderState(
     }
 
     /** Arrondit une borne min / max du sous-menu : entier, ou décimales du plus petit écart. */
-    fun fixRange(v: Float): Float = if (isInt) v.roundToInt().toFloat() else quant(v, gap0)
+    fun fixRange(v: Float): Float = if (nice > 0) v else if (isInt) v.roundToInt().toFloat() else quant(v, gap0)
 
     fun fraction(): Float {
+        if (nice > 0) {
+            val l = niceEff()
+            return if (l.size > 1) nearestIdx(l, value) / (l.size - 1f) else 0f
+        }
         val ch = choices
         if (ch != null) {
             val i = ch.indices.minByOrNull { abs(ch[it] - value) } ?: 0
@@ -86,8 +174,22 @@ class SliderState(
     }
 
     fun setFromFraction(f: Float) {
+        setFromFractionRaw(f)
+        val cl = clampTo
+        if (cl != null) {
+            val v = cl(value)
+            if (v != value) value = v
+        }
+    }
+
+    private fun setFromFractionRaw(f: Float) {
         val ch = choices
         val ff = f.coerceIn(0f, 1f)
+        if (nice > 0) {
+            val l = niceEff()
+            value = l[(ff * (l.size - 1)).roundToInt().coerceIn(0, l.size - 1)]
+            return
+        }
         if (ch != null) {
             value = ch[(ff * (ch.size - 1)).roundToInt()]
             return
@@ -111,10 +213,11 @@ class SliderState(
         if (nh <= nl) return
         lo = nl; hi = nh
         value = value.coerceIn(lo, hi)
+        snapNice()
     }
 
     fun resetRange() = setRange(min0, max0)
-    fun resetValue() { value = def.coerceIn(lo, hi) }
+    fun resetValue() { value = def.coerceIn(lo, hi); snapNice() }
 
     /** Texte d'une valeur, avec autant de décimales que le pas le demande. */
     fun text(v: Float = value, step: Float = effStep): String {
@@ -126,26 +229,32 @@ class SliderState(
     }
 
     /** Texte affiché : durées lisibles pour les curseurs de temps, sinon la valeur avec ses décimales. */
-    fun display(v: Float = value, step: Float = effStep): String = when (kind) {
+    fun display(v: Float = value, step: Float = effStep): String = if (nice == 2) fmtDist(v) else if (nice == 1) fmtDur(v.roundToInt()) else when (kind) {
         1 -> if (step < 1f) text(v, step) + " s" else fmtDur(v.roundToInt())
         2 -> fmtDur((v * 60f).roundToInt(), "0 min")
         else -> text(v, step)
     }
 
     fun load(sp: SharedPreferences) {
-        if (choices == null) {
+        if (hasRange) {
             lo = fixRange(sp.getFloat("sl_${key}_lo", min0))
             hi = fixRange(sp.getFloat("sl_${key}_hi", max0))
-            if (hi <= lo) { lo = min0; hi = max0 }
+            if (nice > 0) {
+                val full = niceFull()
+                lo = full[nearestIdx(full, lo)]
+                hi = full[nearestIdx(full, hi)]
+            }
+            if (hi <= lo || (nice > 0 && (lo < min0 || hi > max0))) { lo = min0; hi = max0 }
         }
         val v = if (persistValue) sp.getFloat("sl_$key", def) else def
         value = if (choices != null) (choices.minByOrNull { abs(it - v) } ?: def)
         else (if (isInt) v.roundToInt().toFloat() else v).coerceIn(lo, hi)
+        snapNice()
     }
 
     fun save(ed: SharedPreferences.Editor) {
         if (persistValue) ed.putFloat("sl_$key", value)
-        if (choices == null) {
+        if (hasRange) {
             ed.putFloat("sl_${key}_lo", lo)
             ed.putFloat("sl_${key}_hi", hi)
         }
@@ -191,6 +300,18 @@ object Settings {
         private set
     var showMarkers by mutableStateOf(true)
         private set
+    // Départ random (v14) : clés « randStart », « randFreeze », « randMarks », « randReady », « randShot » (nouvelles)
+    var randStart by mutableStateOf(false)
+        private set
+    /** Chrono figé pendant l'attente (marques / prêts / délai) : oui par défaut. */
+    var randFreeze by mutableStateOf(true)
+        private set
+    var randMarksSel by mutableIntStateOf(1)
+        private set
+    var randReadySel by mutableIntStateOf(1)
+        private set
+    var randShotSel by mutableIntStateOf(1)
+        private set
     var lang by mutableStateOf(Lang.FR)
         private set
     var logo by mutableIntStateOf(0)
@@ -224,7 +345,8 @@ object Settings {
     val lapWidth = SliderState("lapWidth", S.LAP_WIDTH, 40f, 100f, 90f)
     val hold = SliderState("hold", S.HOLD, 0.1f, 10f, 2f, stepProvider = { 0.1f }, kind = 1)
     val vibe = SliderState("vibe", S.VIBE, 0f, 100f, 100f, isInt = true)
-    val autoStop = SliderState("autoStop", S.AUTO_STOP, 0f, 1440f, 0f, curve = 2, kind = 2, isInt = true)
+    // v14 : arrêt auto en SECONDES, échelle liste log (0 = OFF .. 24 h). Clé NOUVELLE « autoStopS » (l'ancienne « autoStop » était en minutes).
+    val autoStop = SliderState("autoStopS", S.AUTO_STOP, 0f, 86400f, 0f, kind = 1, isInt = true, nice = 1)
     val snake = SliderState("snake", S.SNAKE, 1f, 100f, 12.5f)
     // 2 s à 1 h, échelle quadratique (fin pour les petites valeurs) ; entier
     val aodDelay = SliderState("aodDelay", S.AOD_DELAY, 2f, 3600f, 10f, curve = 2, kind = 1, isInt = true)
@@ -236,24 +358,34 @@ object Settings {
     val qrEc = SliderState("qrEc", S.QR_EC, 0f, 3f, 1f, stepProvider = { 1f }, isInt = true)
     // Suivi avancé
     // Deux précisions en haut du suivi avancé : l'une règle le pas de tous les curseurs de distance, l'autre de tous ceux de temps
+    // v14 : tous en échelle liste log (valeurs rondes, 0 = 1er cran). Précision 0 = « aucune contrainte » (toutes les valeurs rondes).
     val precisionDist = SliderState(
-        "precisionDist", S.TRACK_PRECISION, 0.1f, 1000f, 1f,
-        choices = listOf(0.1f, 0.2f, 0.5f, 1f, 2f, 5f, 10f, 20f, 50f, 100f, 200f, 500f, 1000f)
+        "precisionDist", S.TRACK_PRECISION, 0f, 100000f, 1f, nice = 2, noRange = true
     )
-    /** 1", 2", 5", 10", 30", 1', 2', 5', 10', 20', 30', 1 h (en secondes). */
     val precisionTime = SliderState(
-        "precisionTime", S.TRACK_PRECISION_TIME, 1f, 3600f, 1f,
-        choices = listOf(1f, 2f, 5f, 10f, 30f, 60f, 120f, 300f, 600f, 1200f, 1800f, 3600f), kind = 1
+        "precisionTime", S.TRACK_PRECISION_TIME, 0f, 86400f, 1f, kind = 1, isInt = true, nice = 1, noRange = true
     )
-    val distance = SliderState("distance", S.TRACK_DIST, 0f, 10000f, 0f, stepProvider = { precisionDist.value })
-    val exTime = SliderState("exTime", S.EX_TIME, 0f, 3600f, 0f, stepProvider = { precisionTime.value }, kind = 1, isInt = true)
+    val distance = SliderState("distance", S.TRACK_DIST, 0f, 100000f, 0f, stepProvider = { precisionDist.value }, nice = 2)
+    val exTime = SliderState("exTime", S.EX_TIME, 0f, 86400f, 0f, stepProvider = { precisionTime.value }, kind = 1, isInt = true, nice = 1)
     val nbRep = SliderState("nbRep", S.EX_REPS, 1f, 100f, 1f, stepProvider = { 1f }, isInt = true)
-    val restTime = SliderState("restTime", S.REST_TIME, 0f, 3600f, 0f, stepProvider = { precisionTime.value }, kind = 1, isInt = true)
+    val restTime = SliderState("restTime", S.REST_TIME, 0f, 86400f, 0f, stepProvider = { precisionTime.value }, kind = 1, isInt = true, nice = 1)
+
+    // Départ random : attente min / max (0..60 s, entiers, min <= max garanti à chaque réglage), volume 0..100 %. Pas de sous-menu min/max.
+    val randMin = SliderState(
+        "randMin", S.RAND_MIN, 0f, 60f, 2f, stepProvider = { 1f }, kind = 1, isInt = true, noRange = true,
+        clampTo = { v -> minOf(v, randMax.value) }
+    )
+    val randMax = SliderState(
+        "randMax", S.RAND_MAX, 0f, 60f, 5f, stepProvider = { 1f }, kind = 1, isInt = true, noRange = true,
+        clampTo = { v -> maxOf(v, randMin.value) }
+    )
+    val randVol = SliderState("randVol", S.RAND_VOL, 0f, 100f, 100f, stepProvider = { 1f }, isInt = true, noRange = true)
 
     val sliders: List<SliderState> = listOf(
         ecoBright, autoUnlock, chrono, btn, lap, gapTimeBtn, btnGap, gapBtnLap, lineGap,
         topPctS, lapWidth, hold, vibe, autoStop, snake, aodDelay, colR, colG, colB,
-        qrVer, qrEc, precisionDist, precisionTime, distance, exTime, nbRep, restTime
+        qrVer, qrEc, precisionDist, precisionTime, distance, exTime, nbRep, restTime,
+        randMin, randMax, randVol
     )
     val byKey: Map<String, SliderState> = sliders.associateBy { it.key }
 
@@ -272,7 +404,8 @@ object Settings {
     val ecoBrightness: Float get() = ecoBright.value
     val holdMs: Long get() = (hold.value * 1000f).roundToInt().toLong()
     val autoUnlockMin: Int get() = autoUnlock.value.roundToInt()
-    val autoStopMin: Int get() = autoStop.value.roundToInt()
+    /** Arrêt auto en SECONDES (0 = désactivé), 0..86400. Slider Settings.autoStop, clé de persistance « sl_autoStopS ». */
+    val autoStopSec: Int get() = autoStop.value.roundToInt().coerceIn(0, 86400)
     val aodDelayMs: Long get() = (aodDelay.value * 1000f).roundToInt().toLong()
     /**
      * Longueur d'une série pour les triangles ▲▼ : en suivi avancé (objectif d'exercice réglé), nbRep tours ; avec le recalage,
@@ -280,11 +413,15 @@ object Settings {
      */
     val seriesLen: Int
         get() = if (track && Segments.enabled()) {
-            if (trackRecal) Segments.perCycle() else nbRep.value.roundToInt().coerceAtLeast(1)
+            if (trackRecal && !randStart) Segments.perCycle() else nbRep.value.roundToInt().coerceAtLeast(1)
         } else 1
     val qrVersion: Int get() = qrVer.value.roundToInt().coerceIn(5, 25)
     val qrLevel: Int get() = qrEc.value.roundToInt().coerceIn(0, 3)
     val distanceM: Float get() = distance.value
+    /** Attente du départ random en secondes (min <= max garanti, même si les valeurs persistées étaient incohérentes). */
+    val randMinSec: Int get() = minOf(randMin.value.roundToInt(), randMax.value.roundToInt()).coerceIn(0, 60)
+    val randMaxSec: Int get() = maxOf(randMin.value.roundToInt(), randMax.value.roundToInt()).coerceIn(0, 60)
+    val randVolPct: Int get() = randVol.value.roundToInt().coerceIn(0, 100)
     val rgb: Int
         get() = ((colR.value.roundToInt() and 255) shl 16) or
             ((colG.value.roundToInt() and 255) shl 8) or
@@ -320,6 +457,11 @@ object Settings {
         trackVibe = s.getBoolean("trackVibe", true)
         trackRecal = s.getBoolean("trackRecal", false)
         showMarkers = s.getBoolean("markers", true)
+        randStart = s.getBoolean("randStart", false)
+        randFreeze = s.getBoolean("randFreeze", true)
+        randMarksSel = s.getInt("randMarks", 1).coerceIn(1, 3)
+        randReadySel = s.getInt("randReady", 1).coerceIn(1, 3)
+        randShotSel = s.getInt("randShot", 1).coerceIn(1, 5)
         lang = when (s.getString("lang", "fr")) { "en" -> Lang.EN; "zh" -> Lang.ZH; else -> Lang.FR }
         logo = s.getInt("logo", 0).coerceIn(0, Logos.count - 1)
         colNum = s.getBoolean("col0", true)
@@ -329,6 +471,7 @@ object Settings {
         colPace = s.getBoolean("col4", false)
         showAvg = s.getBoolean("showAvg", true)
         sliders.forEach { it.load(s) }
+        if (randMin.value > randMax.value) randMin.value = randMax.value
     }
 
     fun setRing(c: Context, v: Boolean) { ring = v; p(c).edit().putBoolean("ring", v).apply() }
@@ -357,7 +500,23 @@ object Settings {
     fun setTrackVibe(c: Context, v: Boolean) {
         trackVibe = v
         p(c).edit().putBoolean("trackVibe", v).apply()
-        if (v) Segments.schedule(c) else Segments.cancel(c)
+        Segments.schedule(c)          // les alarmes de frontière restent utiles au départ random même sans vibrations
+    }
+    /** Départ random ON / OFF (Segments.schedule : les alarmes de frontière servent aussi au départ random). */
+    fun updateRandStart(c: Context, v: Boolean) {
+        randStart = v
+        p(c).edit().putBoolean("randStart", v).apply()
+        if (!v) RandomStart.cancel(c, true)
+        Segments.schedule(c)
+    }
+    fun updateRandFreeze(c: Context, v: Boolean) { randFreeze = v; p(c).edit().putBoolean("randFreeze", v).apply() }
+    /** Choix d'un son du départ : kind 0 = « À vos marques » (1..3), 1 = « Prêts » (1..3), 2 = coup de feu (1..5). */
+    fun updateRandSound(c: Context, kind: Int, n: Int) {
+        when (kind) {
+            0 -> { randMarksSel = n.coerceIn(1, 3); p(c).edit().putInt("randMarks", randMarksSel).apply() }
+            1 -> { randReadySel = n.coerceIn(1, 3); p(c).edit().putInt("randReady", randReadySel).apply() }
+            else -> { randShotSel = n.coerceIn(1, 5); p(c).edit().putInt("randShot", randShotSel).apply() }
+        }
     }
     fun setTrackRecal(c: Context, v: Boolean) {
         trackRecal = v
@@ -390,6 +549,17 @@ object Settings {
 
     /** Écrit toutes les valeurs et plages des curseurs (appelé au relâchement d'un curseur). */
     fun persistSliders(c: Context) {
+        sliders.forEach { it.snapNice() }       // une précision modifiée recale distance / temps d'exercice / repos
+        val ed = p(c).edit()
+        sliders.forEach { it.save(ed) }
+        ed.apply()
+        // Chrono en marche : un réglage d'arrêt auto / d'objectif modifié s'applique tout de suite (alarmes replanifiées)
+        try { Stopwatch.rescheduleAutoStop(c) } catch (e: Exception) { }
+        try { if (Stopwatch.running) Segments.schedule(c) } catch (e: Exception) { }
+    }
+
+    /** Écrit les curseurs SANS replanifier (arrêt auto / objectifs) : pour les réglages qui n'en dépendent pas (départ random). */
+    fun persistQuiet(c: Context) {
         val ed = p(c).edit()
         sliders.forEach { it.save(ed) }
         ed.apply()

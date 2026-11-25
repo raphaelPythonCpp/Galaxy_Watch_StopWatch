@@ -1,5 +1,6 @@
 package com.example.chrono
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -12,16 +13,22 @@ import androidx.wear.ongoing.Status
 /** Pastille « chrono en cours » sur le cadran : le système affiche et fait avancer le temps, sans réveiller l'appli. */
 object Ongoing {
     private const val CH = "chrono_running"
-    private const val ID = 4242
+    /** Id de la notification ; partagé avec GoalService (service de premier plan) pour ne jamais afficher deux pastilles. */
+    const val ID = 4242
 
-    fun show(c: Context, startRefMs: Long) {
-        try {
+    private fun ensureChannel(app: Context) {
+        val nm = app.getSystemService(NotificationManager::class.java) ?: return
+        nm.createNotificationChannel(
+            NotificationChannel(CH, S.NOTIF_CHANNEL.t(), NotificationManager.IMPORTANCE_LOW)
+        )
+    }
+
+    /** Construit la notification + OngoingActivity (sans la publier) ; null en cas d'erreur. */
+    fun build(c: Context, startRefMs: Long, text: String? = null): Notification? {
+        return try {
             val app = c.applicationContext
             val ico = Logos.glyph[Settings.logo]
-            val nm = app.getSystemService(NotificationManager::class.java) ?: return
-            nm.createNotificationChannel(
-                NotificationChannel(CH, S.NOTIF_CHANNEL.t(), NotificationManager.IMPORTANCE_LOW)
-            )
+            ensureChannel(app)
             val pi = PendingIntent.getActivity(
                 app, 0,
                 Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -38,17 +45,41 @@ object Ongoing {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(pi)
-            val status = Status.Builder()
-                .addTemplate("#time#")
-                .addPart("time", Status.StopwatchPart(startRefMs))
-                .build()
+            // text != null : attente figée d'un départ random (pas de chrono qui avance sur le cadran)
+            val status = if (text != null) {
+                Status.Builder().addTemplate("#t#").addPart("t", Status.TextPart(text)).build()
+            } else {
+                Status.Builder().addTemplate("#time#").addPart("time", Status.StopwatchPart(startRefMs)).build()
+            }
             val oa = OngoingActivity.Builder(app, ID, nb)
                 .setStaticIcon(ico)
                 .setTouchIntent(pi)
                 .setStatus(status)
                 .build()
             oa.apply(app)
-            nm.notify(ID, nb.build())
+            nb.build()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Notification minimale de secours (le service de premier plan en exige toujours une). */
+    fun fallback(c: Context): Notification {
+        val app = c.applicationContext
+        try { ensureChannel(app) } catch (e: Exception) { }
+        return NotificationCompat.Builder(app, CH)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(S.NOTIF_TITLE.t())
+            .setOngoing(true)
+            .build()
+    }
+
+    fun show(c: Context, startRefMs: Long, text: String? = null) {
+        try {
+            val app = c.applicationContext
+            val nm = app.getSystemService(NotificationManager::class.java) ?: return
+            val n = build(c, startRefMs, text) ?: return
+            nm.notify(ID, n)
         } catch (e: Exception) { }
     }
 

@@ -1,117 +1,59 @@
-MODIFICATIONS DE LA v11 (réalisées) — Super StopWatch
+MODIFICATIONS DE LA v14 (réalisées) — Super StopWatch
 ========================================================
 
-Logos
-- 10 logos : les 2 « clock » de la v10 (logo_01 chrono vert, logo_02 cadran bleu) + les 8 de apercu_logos (n°3 à 10),
-  vectorisés tels quels. Grille 5 × 2 dans la Personnalisation. Alias de lancement 11 et 12 supprimés.
+Curseurs du Suivi avancé et arrêt auto (listes rondes en échelle log)
+- Distance par tour, temps d'exercice, temps de repos, les deux précisions (distance, temps) et le curseur d'ARRÊT AUTO passent en
+  « liste ronde » (NiceValues) : le 1er cran vaut toujours 0 (= OFF / « pas d'allure »), puis des valeurs rondes uniquement.
+  Distance : 0, 0,1 m ... 100 km. Temps : 0, 1 s ... 24 h. Les répétitions restent linéaires.
+- La précision reste active : la valeur est toujours un multiple de la précision choisie (liste effective = valeurs rondes multiples du pas).
+  Précision 0 = aucune contrainte.
+- Affichage joli : « 45 s », « 1 min 30 s », « 2 h 05 min » ; « 400 m », « 1,5 km », « 12 km ».
+- Sous-menu min/max (appui long) : même échelle log et mêmes bornes larges. Les précisions et les curseurs du départ random n'ont pas de
+  sous-menu (appui long = explication seule).
+- Arrêt auto : désormais en SECONDES (0 = OFF, jusqu'à 24 h), nouvelle clé « sl_autoStopS » (l'ancienne « autoStop » était en minutes).
 
-Affichage
-- Tous les curseurs de temps : « 45 s », « 12 min 05 s », « 1 h 05 min » (réglages, sous-menu min/max, suivi avancé).
-- Écart chrono -> cercles : de -10 % à 100 %, et 0 % = le bas des chiffres touche le haut des cercles.
-- Triangles ▲▼ optionnels (Personnalisation, activés par défaut) : à chaque tour, ▲ plus rapide / ▼ plus lent que le tour
-  précédent ; en suivi avancé (objectif d'exercice réglé) que le tour de même rang de la série précédente
-  (une série = nombre de répétitions). Même logique dans la page d'une séance.
+Vibration des objectifs (goals)
+- Constat v13 : même activés, les objectifs ne vibraient jamais. Les objectifs ne font QUE vibrer : jamais de tour (ni auto, ni ajouté à la liste).
+  La vibration est celle d'un tour. Elle a lieu à CHAQUE frontière (début et fin de repos compris), même si un tour manuel tombe 0,1 s à côté.
+- Trois couches sans doublon : (1) boucle d'affichage au premier plan, (2) alarme setAlarmClock -> SegmentReceiver, (3) service de premier
+  plan léger GoalService (empêche le système de tuer l'appli / ses alarmes écran éteint).
+- Dédoublonnage persistant « segDone » (index de la dernière frontière traitée, enregistré AVANT de vibrer) ; frontière franchie depuis plus de
+  4 s = marquée traitée sans vibrer ; journal de diagnostic « segDiag » (12 lignes).
+- Le recalage (trackRecal) décale toujours les instants des objectifs mais ne supprime aucune vibration. Il est ignoré quand le départ random est actif.
+- Appli fermée depuis les applis récentes alors que GoalService tourne : onTaskRemoved -> stop + reset (séance enregistrée).
 
-Historique
-- Glisser une séance vers la droite = l'ouvrir ; maintenir = la supprimer (cause du bug : le maintien masquait l'appui).
+Arrêt automatique
+- Le chrono s'arrête quand (temps - dernière interaction) > valeur. Dernière interaction (« lastAct », persistée) = lancement / reprise, tour
+  manuel, annulation de tour, coup de feu du départ random.
+- Temps figé EXACTEMENT à (dernière interaction + valeur) ; UNE seule vibration d'arrêt (garde anti-rafale de 1,5 s ; en v13 : de grosses
+  vibrations pendant ~5 s). L'alarme d'arrêt auto est replanifiée à chaque interaction.
 
-Aide et explications
-- Aide longue, par rubriques à titres gras, en 3 langues.
-- Appui long sur n'importe quel réglage (interrupteur, case, logo, curseur) = explication dans la langue choisie ;
-  pour les curseurs, elle est au-dessus des curseurs min / max.
-- Retour au même endroit de la liste après un sous-menu (réglages et suivi avancé).
+Départ random (tout en bas de la page Suivi avancé ; sous-réglages visibles seulement quand il est ON)
+- Début de CHAQUE répétition d'exercice (la 1re incluse, jamais le repos) au COUP DE FEU : « À vos marques » (voix) -> « Prêts » (voix) ->
+  attente aléatoire -> coup de feu. Instant du tir = fin de « Prêts » + random(min, max).
+- Réglages : Attente min / max (0 à 60 s, entiers, min <= max garanti), Volume (0-100 % du maximum du flux ALARME ; le volume d'origine est
+  restauré à la fin du son, à l'annulation, ou au lancement suivant si le processus a été tué), « Chrono figé pendant l'attente » (défaut ON),
+  choix des sons : À vos marques (3 voix selon la langue), Prêts (3 voix), Coup de feu (5 sons). Un appui sur un choix le sélectionne ET le joue.
+- Pendant l'attente, le texte remplace le chrono ; le bouton (physique ou écran) ANNULE l'attente (pas de coup de feu).
+- Au coup de feu : son + chrono (re)démarre + tour automatique (sauf pour la toute première répétition, un tour à 0:00 n'a pas de sens) +
+  objectifs re-synchronisés.
+- Chrono figé ON : temps figé à la frontière pendant l'attente, exclue des temps, tours et historique. OFF : le chrono continue, le tour auto
+  marque le tir, et les objectifs sont décalés du retard réel (décalage « randShift » persisté).
+- Écran éteint : wake lock partiel <= 110 s, service de premier plan GoalService, minuteur en processus + alarme de secours (RandomStartReceiver).
+- Fichiers : RandomStart.kt (machine d'états IDLE / MARKS / READY / WAIT / GO), SoundPlayer.kt (Sounds, AlarmVolume, SoundPlayer).
 
-Réglages
-- Permutés : « Cercle » passe en Personnalisation ; « Réglages en activité », « Aide » et « Suivi avancé » passent en Essentiels.
-- Avertissement quand on DÉSACTIVE « Réglages en activité ».
-- Supprimés : bague tactile de secours et « événements par ligne » (1 ligne par cran de bague, natif).
-- Suivi avancé : interrupteur « Vibrations des objectifs » (vibration identique à celle d'un tour, repos compris).
+Divers
+- Nouvelles permissions : WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_SPECIAL_USE.
+- 23 fichiers audio dans res/raw (voir PROJET_POUR_IA.txt, section 4.11).
+- versionCode 14 / versionName "14", workflow GitHub (SuperStopWatch-v14-build<N>.apk), README, PROJET_POUR_IA, aide intégrée et explications FR/EN/ZH.
+- Refusés par l'utilisateur (non ajoutés) : faux départ, aperçu de séquence, vibrations différentes par type d'objectif, préréglages de séance,
+  icône des tours auto dans l'historique, tir identique par série.
 
-Always-on display
-- L'écran reste allumé tant que le chrono tourne ou affiche un temps (FLAG_KEEP_SCREEN_ON, aucune permission),
-  puis veille douce après « Délai avant veille » (2 s à 5 min, 10 s par défaut) : noir, chiffres gris, luminosité minimale.
-  Un toucher ou le bouton du bas réveille (sans déclencher de tour).
+À vérifier sur la montre (jamais exécuté par l'IA)
+- Vibrations des objectifs écran éteint (poignet baissé) et appli fermée, avec GoalService.
+- Départ random écran éteint : voix + coup de feu audibles, volume du flux alarme monté puis restauré.
+- Texte de la pastille pendant l'attente (Status.TextPart de wear-ongoing).
+- Lecture des fichiers (MediaPlayer, USAGE_ALARM) sur le haut-parleur de la montre.
+- Arrêt auto : une seule vibration, temps figé à (dernière interaction + valeur).
 
-Fermeture / Forcer l'arrêt
-- Sentinelle (alarme lointaine retenant un PendingIntent, annulée par « Forcer l'arrêt ») + journal de sortie du système
-  (fermeture depuis les applis récentes) => stop + reset au prochain lancement (appli, tile, complication) ; séance enregistrée.
-- Un redémarrage de la montre ne remet pas le chrono à zéro ; quitter l'appli non plus.
-
-Version
-- v11 : versionCode 11, workflow GitHub, README, PROJET_POUR_IA.
-
-À vérifier sur la montre
-- Glissement vers la droite dans l'historique (geste « retour » du système).
-- Reset après « Forcer l'arrêt » et après fermeture depuis les applis récentes.
-- Veille douce de l'affichage permanent ; contact chrono / cercles à 0 %.
-
---------------------------------------------------------
-MODIFICATIONS DE LA v12 (réalisées) — Super StopWatch
-========================================================
-
-Suivi avancé
-- Deux curseurs de précision en haut : « Précision distance » (règle le pas de tous les curseurs de distance) et
-  « Précision temps » (1", 2", 5", 10", 30", 1', 2', 5', 10', 20', 30', 1 h ; règle le pas de « Temps d'exercice » et « Temps de repos »).
-  La valeur d'un curseur à pas imposé est toujours un multiple du pas.
-- Interrupteur « Recalage des objectifs » (désactivé par défaut) : chaque tour (bouton du bas ou bouton Tour) marque la fin d'un
-  segment (chaque exercice, puis le repos : un tour au début du repos, un à sa fin) ; l'objectif suivant devient
-  instant du tour + durée du segment suivant, sans changer les durées. Ex. O = [10, 10, 10, 20 (R)] : tours à 8 / 20 / 31 s ->
-  objectifs à 18 / 30 / 51 s. Annuler le dernier tour annule aussi son décalage. Le cercle repart aussi au tour.
-  Avec le recalage, une série compte un tour par segment (repos compris) pour les triangles ▲▼.
-
-Curseurs
-- Audit entier / décimal : nouveau mode `isInt`. Entiers (valeur ET min / max du sous-menu) : répétitions, versions et correction QR,
-  couleurs R/V/B, luminosité éco, vibrations (%), déverrouillage auto, arrêt auto, délai avant veille, tailles (chrono, cercles, tours),
-  temps d'exercice, temps de repos. Décimaux (arrondis aux décimales de leur pas, valeur réelle = valeur affichée) : distance,
-  espacements, snake, haut de l'écran, largeur des tours ; temps de maintien (pas de 0,1 s).
-  Cause du bug : le sous-menu min / max calculait ses bornes en décimal (ex. 1,99 / 34,65), ce qui rendait la valeur décimale.
-
-Codes QR
-- Plus aucune luminosité forcée : celle du système (réglages de la montre ou menu rapide), même en mode éco sur cet écran.
-
-Triangles ▲▼
-- Constat : ils s'affichent désormais (aucun changement de code de dessin).
-
-Version
-- v12 : versionCode 12, workflow GitHub, README, PROJET_POUR_IA.
-
-À vérifier sur la montre
-- Recalage : tours à 8 / 20 / 31 s avec O = [10, 10, 10, 20 (R)] ; annulation du dernier tour ; vibration déjà passée non rejouée.
-- Curseurs entiers : plus de décimales dans le sous-menu min / max (répétitions, couleurs, QR…).
-- Luminosité du système sur l'écran des QR.
-
---------------------------------------------------------
-MODIFICATIONS DE LA v13 (réalisées) — Super StopWatch (probablement la version finale)
-========================================================
-
-Demandes
-- Suivi avancé : les objectifs ne vibraient pas (paramètre activé). Cause probable : toutes les vibrations utilisaient
-  `vibrate(effect)` sans attributs ; depuis Android 10, le système ignore la vibration d'une appli qui n'est pas au premier plan,
-  sauf usage « alarme / sonnerie / notification ». Or l'objectif est déclenché par une alarme (processus en arrière-plan, écran
-  souvent éteint). Les vibrations d'objectifs et d'arrêt automatique utilisent maintenant l'usage ALARME.
-- Chrono arrêté avec un temps > 0 : « Reset » est renommé « Terminer » (même action : séance enregistrée) ; le bouton « Annuler »
-  devient « Suppr. » (appui long = supprime l'activité SANS l'enregistrer). Le 3e cercle n'existe qu'avec l'option
-  « Bouton annuler / suppr. » (renommée) ; sans elle, il n'y a pas de suppression possible.
-- Affichage permanent : « Délai avant veille » de 2 s à 1 h (avant : 5 min), échelle plus fine pour les petites valeurs, entier.
-
-Audit complet (code, sécurité, batterie)
-- Horloge monotone (SystemClock.elapsedRealtime) : un recalage de l'heure de la montre ne fausse plus le chrono ; repli sur
-  l'heure murale après un redémarrage (le chrono survit toujours au redémarrage).
-- Start / Stop / Reset enregistrés avec commit() : aucun changement d'état perdu si le processus est tué.
-- Permission WAKE_LOCK retirée (inutilisée). Aucune permission réseau, aucun log, sauvegarde désactivée, composants non exportés
-  (sauf tile / complication protégés par permission système), PendingIntent immuables : vérifiés.
-- Historique : la boucle d'appui long à 60 Hz ne tourne plus en permanence (uniquement pendant un appui) : moins de batterie.
-- Statistiques : division par zéro gardée. Formats « %02d » indépendants de la langue du système.
-- Tableau des capacités QR : 84 valeurs vérifiées avec une bibliothèque indépendante : exact.
-
-Version
-- v13 : versionCode 13, workflow GitHub, README (section Sécurité et confidentialité), PROJET_POUR_IA (section 10 Audit), À propos.
-
-À vérifier sur la montre
-- Objectifs : vibration écran éteint (poignet baissé), puis pendant un exercice ; vérifier aussi les réglages de vibration de la montre.
-- Chrono arrêté avec un temps : « Terminer » enregistre ; « Suppr. » (maintenir) supprime sans enregistrer ; texte « Terminer » non coupé.
-- Délai de veille jusqu'à 1 h ; chrono juste après un changement de l'heure (réglages de la montre).
-
---------------------------------------------------------
-MODIFICATIONS À APPORTER POUR LA v14 :
--
+v11 / v12 : voir PROJET_POUR_IA.txt

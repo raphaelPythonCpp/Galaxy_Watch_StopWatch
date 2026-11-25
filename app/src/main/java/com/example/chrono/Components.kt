@@ -57,6 +57,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import java.util.Locale
 import com.google.zxing.common.BitMatrix
 
@@ -204,6 +205,17 @@ fun TimeText(now: MutableLongState, eco: Boolean) {
             Text(fmtTenth(ms), fontSize = (big * 0.47f).sp, color = Dim, style = tight(big * 0.47f))
         }
     }
+}
+
+/** Attente d'un départ random : remplace le chrono central (« À vos marques… » puis « Prêts… »). */
+@Composable
+fun WaitText() {
+    val sp = Settings.chronoSp * 0.5f
+    Text(
+        if (RandomStart.state == RandomStart.MARKS) S.RS_MARKS_TXT.t() else S.RS_READY_TXT.t(),
+        fontSize = sp.sp, fontWeight = FontWeight.Medium, color = Fg, style = tight(sp),
+        maxLines = 1, softWrap = false
+    )
 }
 
 /** Always-on display : noir et gris fixes (un fond clair abîmerait l'écran AMOLED). */
@@ -597,17 +609,17 @@ fun SliderBar(
 @Composable
 fun SliderRow(
     spec: SliderState, accent: Color, enabled: Boolean = true, unit: String = "",
-    fmt: ((Float) -> String)? = null, onRelease: () -> Unit = {}
+    fmt: ((Float) -> String)? = null, onRelease: () -> Unit = {}, quiet: Boolean = false
 ) {
     val ctx = LocalContext.current
     SliderBar(
         label = spec.label.t(),
-        valueText = fmt?.invoke(spec.value) ?: (spec.display() + (if (spec.kind == 0) unit else "")),
+        valueText = fmt?.invoke(spec.value) ?: (spec.display() + (if (spec.kind == 0 && spec.nice == 0) unit else "")),
         fraction = spec.fraction(),
         fill = accent,
         enabled = enabled,
-        onFinish = { Settings.persistSliders(ctx); onRelease() },
-        onLong = if (spec.choices == null) { { Ui.openRange(spec.key) } } else { { Ui.openInfo(spec.key) } },
+        onFinish = { if (quiet) Settings.persistQuiet(ctx) else Settings.persistSliders(ctx); onRelease() },
+        onLong = if (spec.hasRange) { { Ui.openRange(spec.key) } } else { { Ui.openInfo(spec.key) } },
         onChange = { f -> spec.setFromFraction(f) }
     )
 }
@@ -617,7 +629,7 @@ fun SliderRow(
 /** Allure d'un tour : « 3'32/km » (rien de plus). */
 fun fmtPace(lapMs: Long, distM: Float): String {
     if (distM <= 0f) return ""
-    val sec = (lapMs / 1000.0 / (distM / 1000.0)).roundToInt()
+    val sec = (lapMs / 1000.0 / (distM / 1000.0)).roundToLong().coerceAtLeast(0L)
     return "${sec / 60}'${String.format(Locale.ROOT, "%02d", sec % 60)}/km"
 }
 

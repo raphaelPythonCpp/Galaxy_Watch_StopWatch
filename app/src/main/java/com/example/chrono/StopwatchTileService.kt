@@ -37,7 +37,7 @@ class StopwatchTileService : TileService() {
 
         val tile = Tile.Builder()
             .setResourcesVersion("3-${Settings.logo}")
-            .setFreshnessIntervalMillis(if (Stopwatch.running) (if (Settings.eco) 5000L else 1000L) else 0L)
+            .setFreshnessIntervalMillis(if (Stopwatch.running || RandomStart.waiting) (if (Settings.eco) 5000L else 1000L) else 0L)
             .setTileTimeline(Timeline.fromLayoutElement(layout()))
             .build()
         return CallbackToFutureAdapter.getFuture<Tile> { c -> c.set(tile); "tile" }
@@ -97,7 +97,8 @@ class StopwatchTileService : TileService() {
     }
 
     private fun layout(): LayoutElementBuilders.LayoutElement {
-        val running = Stopwatch.running
+        val waiting = RandomStart.waiting                 // attente d'un départ random : bouton « Stop » = annuler, texte à la place du temps
+        val running = Stopwatch.running || waiting
         val eco = Settings.eco
         val pal = makePalette(Settings.rgb)
 
@@ -112,7 +113,7 @@ class StopwatchTileService : TileService() {
         // Le Reset n'existe que dans l'appli (appui long 3 s) : le tile n'affiche que Start, ou Tour + Stop
         val row = LayoutElementBuilders.Row.Builder()
             .setVerticalAlignment(LayoutElementBuilders.VERTICAL_ALIGN_CENTER)
-        if (running) {
+        if (running && !waiting) {
             row.addContent(button("left", S.LAP.t(), 0xFF2B2F36, 0xFFFFFFFF))
             row.addContent(LayoutElementBuilders.Spacer.Builder().setWidth(dp(12f)).build())
         }
@@ -132,7 +133,10 @@ class StopwatchTileService : TileService() {
                     )
                     .build()
             )
-            .addContent(text(fmtMain(Stopwatch.elapsed()), 38f, 0xFFFFFFFF))
+            .addContent(
+                if (waiting) text(if (RandomStart.state == RandomStart.MARKS) S.RS_MARKS_TXT.t() else S.RS_READY_TXT.t(), 18f, 0xFFFFFFFF)
+                else text(fmtMain(Stopwatch.elapsed()), 38f, 0xFFFFFFFF)
+            )
             .addContent(LayoutElementBuilders.Spacer.Builder().setHeight(dp(6f)).build())
             .addContent(row.build())
             .build()
