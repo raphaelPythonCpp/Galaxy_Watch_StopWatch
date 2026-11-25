@@ -55,6 +55,12 @@ object NiceValues {
 }
 
 /** Distance jolie : « 400 m », « 2,5 m », « 1,5 km », « 12 km » (virgule en français, point sinon). */
+/** Millisecondes lisibles : « 250 ms », « 1.250 s ». */
+fun fmtMs(ms: Int): String {
+    val v = ms.coerceAtLeast(0)
+    return if (v < 1000) "$v ms" else "${v / 1000}.${(v % 1000).toString().padStart(3, '0')} s"
+}
+
 fun fmtDist(m: Float): String {
     fun trim(x: Float, decs: Int): String {
         var s = String.format(Locale.ROOT, "%.${decs}f", x)
@@ -232,6 +238,7 @@ class SliderState(
     fun display(v: Float = value, step: Float = effStep): String = if (nice == 2) fmtDist(v) else if (nice == 1) fmtDur(v.roundToInt()) else when (kind) {
         1 -> if (step < 1f) text(v, step) + " s" else fmtDur(v.roundToInt())
         2 -> fmtDur((v * 60f).roundToInt(), "0 min")
+        3 -> fmtMs(v.roundToInt())
         else -> text(v, step)
     }
 
@@ -382,8 +389,8 @@ object Settings {
         randMax.clampTo = { v: Float -> maxOf(v, randMin.value) }
     }
     val randVol = SliderState("randVol", S.RAND_VOL, 0f, 100f, 100f, stepProvider = { 1f }, isInt = true, noRange = true)
-    /** Compensation de la latence du haut-parleur (ms) : le chrono démarre ce délai APRÈS le start() du son (0..500 ms, pas de 5). */
-    val randLat = SliderState("randLat", S.RAND_LAT, 0f, 500f, 0f, stepProvider = { 5f }, isInt = true, noRange = true)
+    /** Compensation de la latence du haut-parleur (ms) : le chrono ET la vibration du départ suivent le start() du son de ce délai (0..5000 ms, pas de 5 ; plage réglable par appui long). */
+    val randLat = SliderState("randLat", S.RAND_LAT, 0f, 5000f, 0f, stepProvider = { 5f }, kind = 3, isInt = true)
 
     val sliders: List<SliderState> = listOf(
         ecoBright, autoUnlock, chrono, btn, lap, gapTimeBtn, btnGap, gapBtnLap, lineGap,
@@ -426,7 +433,7 @@ object Settings {
     val randMinSec: Int get() = minOf(randMin.value.roundToInt(), randMax.value.roundToInt()).coerceIn(0, 60)
     val randMaxSec: Int get() = maxOf(randMin.value.roundToInt(), randMax.value.roundToInt()).coerceIn(0, 60)
     val randVolPct: Int get() = randVol.value.roundToInt().coerceIn(0, 100)
-    val randLatMs: Int get() = randLat.value.roundToInt().coerceIn(0, 500)
+    val randLatMs: Int get() = randLat.value.roundToInt().coerceIn(0, 5000)
     val rgb: Int
         get() = ((colR.value.roundToInt() and 255) shl 16) or
             ((colG.value.roundToInt() and 255) shl 8) or

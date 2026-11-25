@@ -513,11 +513,13 @@ object Stopwatch {
      * ou -1 si le chrono ne peut pas (re)démarrer (déjà arrêté : aucun tir).
      */
     fun randomShot(c: Context, frozen: Boolean): Long {
-        // Compensation de la latence du haut-parleur : le chrono démarre comp ms APRÈS le start() du son (runDelta reste à 0 d'ici là)
+        val t0 = SystemClock.elapsedRealtime()       // instant du start() du son (appelé juste après)
+        // Compensation de la latence du haut-parleur : SON, VIBRATION et DÉBUT DU CHRONO doivent être perçus ensemble. Le son se fait entendre
+        // ~comp ms après son start() ; le chrono (runDelta reste à 0 d'ici là), la vibration et le tour automatique suivent donc de comp ms.
         val comp = Settings.randLatMs.toLong()
         if (frozen) {
             if (running) return -1L
-            startedAt = now() + comp; startedEl = SystemClock.elapsedRealtime() + comp; startedBoot = bootCount(c)
+            startedAt = now() + comp; startedEl = t0 + comp; startedBoot = bootCount(c)
             sameBoot = true; running = true
             lastAct = accumulated
         } else {
@@ -525,8 +527,32 @@ object Stopwatch {
             enforceAutoStop(c)
             if (!running) return -1L
         }
-        // Chrono figé : le tir a lieu EXACTEMENT au temps figé (sinon 1 ms écoulé depuis la reprise créerait un tour parasite à 0:00.001)
-        val t = if (frozen) accumulated else (elapsed() - comp).coerceAtLeast(0L)
+        // Chrono figé : le tir a lieu EXACTEMENT au temps figé (sinon 1 ms écoulé depuis la reprise créerait un tour parasite à 0:00.001).
+        // Chrono non figé (il tourne déjà) : le tir est entendu comp ms plus tard, donc à elapsed() + comp.
+        val t = if (frozen) accumulated else elapsed() + comp
+        val wait = (comp - (SystemClock.elapsedRealtime() - t0)).coerceAtLeast(0L)
+        val appCtx = c.applicationContext
+        if (frozen) {
+            shotBookkeeping(appCtx, t, true)
+        } else if (wait <= 0L) {
+            shotBookkeeping(appCtx, t, false)
+        } else {
+            // tour automatique et interaction à l'instant où le coup de feu est entendu
+            shotHandler.postDelayed({ if (running) shotBookkeeping(appCtx, t, false) }, wait)
+        }
+        if (wait <= 0L) {
+            buzz(appCtx, true, alarm = !Segments.uiVisible)
+        } else {
+            // vibration de départ : en même temps que le son entendu et le début du chrono (annulée si le chrono est arrêté entre-temps)
+            shotHandler.postDelayed({ if (running) buzz(appCtx, true, alarm = !Segments.uiVisible) }, wait)
+        }
+        return t
+    }
+
+    private val shotHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** Tour automatique du tir (sauf à 0:00), interaction pour l'arrêt auto, sauvegarde, pastille, alarme d'arrêt auto. */
+    private fun shotBookkeeping(c: Context, t: Long, frozen: Boolean) {
         if (t > 0L) {
             syncLapStore(c)
             val last = laps.firstOrNull()?.total ?: 0L
@@ -542,8 +568,6 @@ object Stopwatch {
             markSeen(c)
         }
         scheduleAutoStop(c)
-        buzz(c, true, alarm = !Segments.uiVisible)
-        return t
     }
 
     /** Annulation de l'attente par l'utilisateur : le chrono est (ou reste) arrêté, rien n'est enregistré de l'attente. */

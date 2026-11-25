@@ -391,6 +391,8 @@ Aucune permission réseau.
     Stopwatch.randomShot (horodatage du chrono dans ses 1res lignes) ; écriture disque / alarmes / notification viennent après. Repli : play()
     classique si le chargement échoue. La latence propre au haut-parleur (quelques dizaines de ms) n'est pas compensée (jamais mesurée sur la montre).
     Site de vérification : verif_coup_de_feu/index.html (hors projet Android).
+    Compensation audio (Settings.randLat, 0..5000 ms, sous-menu min/max actif, kind = 3 -> fmtMs) : SON, VIBRATION de départ et DÉBUT DU CHRONO doivent coïncider.
+    randomShot() : chrono figé -> startedEl = t0 + comp ; non figé -> tour auto à elapsed() + comp ; vibration et tour auto différés de comp (shotHandler).
   - Machine d'états (`RandomStart.state`, persistée dans les préférences « randstart » : st, frozen, first, shotAt, bT) :
     IDLE -> MARKS -> READY -> WAIT -> GO -> IDLE. `waiting` = MARKS..WAIT (le texte remplace le chrono, le bouton ANNULE, pas de tour manuel) ;
     `active` = MARKS..GO (service et wake lock gardés). Déclencheurs : 1re répétition = `Stopwatch.start` -> `RandomStart.tryStart` (séance neuve
