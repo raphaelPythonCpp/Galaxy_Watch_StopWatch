@@ -97,6 +97,7 @@ enum class S(val fr: String, val en: String, val zh: String) {
     RAND_MIN("Attente min", "Min wait", "最短等待"),
     RAND_MAX("Attente max", "Max wait", "最长等待"),
     RAND_VOL("Volume du départ", "Start volume", "起跑音量"),
+    RAND_LAT("Compensation audio", "Audio offset", "音频补偿"),
     RAND_FREEZE("Chrono figé pendant l'attente", "Timer frozen while waiting", "等待时秒表暂停"),
     RAND_MARKS("À vos marques", "On your marks", "各就位"),
     RAND_READY("Prêts", "Set", "预备"),

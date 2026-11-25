@@ -513,9 +513,11 @@ object Stopwatch {
      * ou -1 si le chrono ne peut pas (re)démarrer (déjà arrêté : aucun tir).
      */
     fun randomShot(c: Context, frozen: Boolean): Long {
+        // Compensation de la latence du haut-parleur : le chrono démarre comp ms APRÈS le start() du son (runDelta reste à 0 d'ici là)
+        val comp = Settings.randLatMs.toLong()
         if (frozen) {
             if (running) return -1L
-            startedAt = now(); startedEl = SystemClock.elapsedRealtime(); startedBoot = bootCount(c)
+            startedAt = now() + comp; startedEl = SystemClock.elapsedRealtime() + comp; startedBoot = bootCount(c)
             sameBoot = true; running = true
             lastAct = accumulated
         } else {
@@ -524,7 +526,7 @@ object Stopwatch {
             if (!running) return -1L
         }
         // Chrono figé : le tir a lieu EXACTEMENT au temps figé (sinon 1 ms écoulé depuis la reprise créerait un tour parasite à 0:00.001)
-        val t = if (frozen) accumulated else elapsed()
+        val t = if (frozen) accumulated else (elapsed() - comp).coerceAtLeast(0L)
         if (t > 0L) {
             syncLapStore(c)
             val last = laps.firstOrNull()?.total ?: 0L
