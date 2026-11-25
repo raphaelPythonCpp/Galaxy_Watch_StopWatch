@@ -253,12 +253,9 @@ class Info(val key: String, val title: S, fr: String, en: String, zh: String) {
                 "Volume of every start sound (voices and gun shot), from 0 to 100 % of the watch speaker's maximum (alarm stream).\nThe original volume is restored as soon as the sound ends or is cancelled. Vibrations are not affected. 0 % = silent.",
                 "所有起跑声音（语音和枪声）的音量，为手表扬声器最大音量（闹钟音量）的 0 至 100 %。\n声音结束或取消后，原有音量会立即恢复。振动不受影响。0 % = 静音。"),
             Info("randLat", S.RAND_LAT,
-                "Le haut-parleur de la montre met quelques dizaines à centaines de ms à produire le son après l'ordre de lecture : sans compensation, le chrono part avant que tu entendes le coup de feu.
-Ce réglage retarde le départ du chrono (et le tour automatique) de ce délai. À régler pour que ton temps de réaction sur la montre soit comparable à celui d'un test sur ordinateur (essaie 150 à 250 ms). 0 = aucun retard.",
-                "The watch speaker needs tens to hundreds of ms to produce the sound after the play command: without compensation the timer starts before you hear the gun shot.
-This setting delays the timer start (and the automatic lap) by that amount. Tune it so your reaction time on the watch matches a computer test (try 150 to 250 ms). 0 = no delay.",
-                "手表扬声器在播放指令之后需要几十到几百毫秒才发出声音：不补偿时，秒表会在你听到枪声之前开始。
-此设置会把秒表（和自动计圈）的开始推迟相应时间。请调整到与电脑测试的反应时间相当（可试 150 至 250 毫秒）。0 = 不延迟。"),
+                "Le haut-parleur de la montre met quelques dizaines à centaines de ms à produire le son après l'ordre de lecture : sans compensation, le chrono part avant que tu entendes le coup de feu.\nCe réglage retarde le départ du chrono (et le tour automatique) de ce délai. À régler pour que ton temps de réaction sur la montre soit comparable à celui d'un test sur ordinateur (essaie 150 à 250 ms). 0 = aucun retard.",
+                "The watch speaker needs tens to hundreds of ms to produce the sound after the play command: without compensation the timer starts before you hear the gun shot.\nThis setting delays the timer start (and the automatic lap) by that amount. Tune it so your reaction time on the watch matches a computer test (try 150 to 250 ms). 0 = no delay.",
+                "手表扬声器在播放指令之后需要几十到几百毫秒才发出声音：不补偿时，秒表会在你听到枪声之前开始。\n此设置会把秒表（和自动计圈）的开始推迟相应时间。请调整到与电脑测试的反应时间相当（可试 150 至 250 毫秒）。0 = 不延迟。"),
             Info("randFreeze", S.RAND_FREEZE,
                 "Activé : le temps du chrono est figé pendant « À vos marques », « Prêts » et le délai. L'attente n'entre ni dans les temps, ni dans les tours, ni dans l'historique, et l'arrêt auto est suspendu.\nDésactivé : le chrono continue de tourner pendant l'attente, le temps d'attente compte dans le total et le tour automatique marque le coup de feu. Les objectifs sont alors décalés du retard réel.",
                 "On: the timer time is frozen during « On your marks », « Set » and the delay. The wait is excluded from times, laps and history, and auto stop is suspended.\nOff: the timer keeps running during the wait, the waiting time counts in the total and the automatic lap marks the gun shot. Goals are then shifted by the real delay.",
