@@ -382,12 +382,14 @@ object Settings {
         randMax.clampTo = { v: Float -> maxOf(v, randMin.value) }
     }
     val randVol = SliderState("randVol", S.RAND_VOL, 0f, 100f, 100f, stepProvider = { 1f }, isInt = true, noRange = true)
+    /** Compensation de la latence du haut-parleur (ms) : le chrono démarre ce délai APRÈS le start() du son (0..500 ms, pas de 5). */
+    val randLat = SliderState("randLat", S.RAND_LAT, 0f, 500f, 0f, stepProvider = { 5f }, isInt = true, noRange = true)
 
     val sliders: List<SliderState> = listOf(
         ecoBright, autoUnlock, chrono, btn, lap, gapTimeBtn, btnGap, gapBtnLap, lineGap,
         topPctS, lapWidth, hold, vibe, autoStop, snake, aodDelay, colR, colG, colB,
         qrVer, qrEc, precisionDist, precisionTime, distance, exTime, nbRep, restTime,
-        randMin, randMax, randVol
+        randMin, randMax, randVol, randLat
     )
     val byKey: Map<String, SliderState> = sliders.associateBy { it.key }
 
@@ -424,6 +426,7 @@ object Settings {
     val randMinSec: Int get() = minOf(randMin.value.roundToInt(), randMax.value.roundToInt()).coerceIn(0, 60)
     val randMaxSec: Int get() = maxOf(randMin.value.roundToInt(), randMax.value.roundToInt()).coerceIn(0, 60)
     val randVolPct: Int get() = randVol.value.roundToInt().coerceIn(0, 100)
+    val randLatMs: Int get() = randLat.value.roundToInt().coerceIn(0, 500)
     val rgb: Int
         get() = ((colR.value.roundToInt() and 255) shl 16) or
             ((colG.value.roundToInt() and 255) shl 8) or
