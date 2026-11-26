@@ -23,6 +23,19 @@ private fun hueShift(c: Color, deg: Float, vMul: Float = 1f): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
+/**
+ * Couleur des boutons − / + posés sur une barre de curseur : complémentaire (teinte + 180°) de la couleur de remplissage, éclaircie ;
+ * si le remplissage est gris (mode éco), noir ou blanc selon sa luminosité.
+ */
+fun stepColor(fill: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(fill.toArgb(), hsv)
+    if (hsv[1] < 0.15f) return if (fill.luminance() > 0.5f) Color.Black else Color.White
+    hsv[0] = (hsv[0] + 180f) % 360f
+    hsv[2] = maxOf(hsv[2], 0.9f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
 fun makePalette(rgb: Int): Palette {
     val base = Color(0xFF000000.toInt() or (rgb and 0xFFFFFF))
     return Palette(base, hueShift(base, 90f), hueShift(base, 180f), hueShift(base, 180f, 0.7f))

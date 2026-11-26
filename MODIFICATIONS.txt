@@ -1,3 +1,38 @@
+MODIFICATIONS DE LA v15 — Super StopWatch
+========================================================
+
+Curseurs de temps (maintien, déverrouillage auto, délai avant veille, arrêt auto, attente min / max, compensation audio, réaction de référence)
+- Tout est en millisecondes, de 0 à 24 h, sauf : maintien >= 100 ms ; délai avant veille >= 1 s ; attente min / max <= 1 min ; compensation et
+  référence <= durée de la plus longue piste audio de coup de feu (calculée sur les ressources, repli 1500 ms).
+- 20 à 50 crans adaptés à la plage min / max ; sur une plage de moins de 50 ms, chaque milliseconde.
+- Sous-menu min / max : interrupteur « Échelle log » (activé par défaut, par curseur) ; désactivé = pas constant.
+- Déverrouillage auto et arrêt auto : 0 = Désactivé.
+- Valeurs v14 conservées (nouvelles clés « ms_... ») ; les anciennes bornes min / max de ces curseurs repartent de la plage d'origine.
+
+Précisions
+- Précision temps : 1 ms à 24 h. Précision distance : 1 m à 100 km (plus de 0, ni de 0,1 / 0,2 / 0,5 m).
+- Temps d'exercice et de repos possibles en millisecondes (0 = désactivé) ; listes de 50 crans au plus.
+
+Boutons − et +
+- Sur tous les curseurs, y compris min et max : un appui = un cran exactement, couleur complémentaire de la barre.
+
+Calibrage de la compensation audio (tout en bas du Suivi avancé)
+- Réglages : nombre de tests (1 à 20, défaut 5), médiane (défaut) ou moyenne, réaction de référence (défaut 200 ms).
+- Chaque test : « Prêt… », attente aléatoire (min à max du départ random), coup de feu choisi au volume du départ ; réaction au bouton du bas
+  ou au toucher ; aucune vibration. Appui trop tôt = test recommencé. 10 s sans réaction = arrêt.
+- Compensation = statistique - référence, bornée à [0, plus longue piste], appliquée automatiquement à « Compensation audio ».
+- Quitter, retour, écran éteint ou appli en pause : annulation sans rien modifier, volume restauré. Impossible si le chrono tourne, si un
+  départ random est en cours ou si le volume est à 0.
+
+Divers
+- versionCode 15 / versionName "15" ; « À propos » v15 ; explications et aide FR/EN/ZH mises à jour.
+- Documentation : le workflow GitHub ne publie qu'un artifact APK (pas de Release).
+
+À vérifier sur la montre (jamais exécuté par l'IA)
+- Confort tactile des boutons − / + et glissement des barres ; lecture de la durée des pistes audio ; objectifs de moins d'une seconde.
+- Calibrage : bouton physique pris en compte dès l'appui (et non au relâchement), réactions plausibles, volume restauré après annulation.
+
+
 MODIFICATIONS DE LA v14 (réalisées) — Super StopWatch
 ========================================================
 

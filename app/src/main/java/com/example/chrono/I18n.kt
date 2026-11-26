@@ -53,7 +53,6 @@ enum class S(val fr: String, val en: String, val zh: String) {
     NONE("Aucune", "None", "无"),
     AUTO_STOP("Arrêt auto du chrono", "Auto stop", "自动停止"),
     OFF("Désactivé", "Off", "关闭"),
-    NEVER("Jamais", "Never", "从不"),
     COLOR("Couleur", "Color", "颜色"),
     RED("Rouge", "Red", "红"),
     GREEN("Vert", "Green", "绿"),
@@ -71,6 +70,7 @@ enum class S(val fr: String, val en: String, val zh: String) {
     MIN("Min", "Min", "最小"),
     MAX("Max", "Max", "最大"),
     RANGE_RESET("Plage d'origine (maintenir)", "Original range (hold)", "恢复原始范围（长按）"),
+    LOG_SCALE("Échelle log", "Log scale", "对数刻度"),
 
     NOTIF_TITLE("Chronomètre", "Stopwatch", "秒表"),
     NOTIF_CHANNEL("Chrono en cours", "Stopwatch running", "秒表运行中"),
@@ -98,6 +98,7 @@ enum class S(val fr: String, val en: String, val zh: String) {
     RAND_MAX("Attente max", "Max wait", "最长等待"),
     RAND_VOL("Volume du départ", "Start volume", "起跑音量"),
     RAND_LAT("Compensation audio", "Audio offset", "音频补偿"),
+    CALIB_REF("Réaction de référence", "Reference reaction", "参考反应时间"),
     RAND_FREEZE("Chrono figé pendant l'attente", "Timer frozen while waiting", "等待时秒表暂停"),
     RAND_MARKS("À vos marques", "On your marks", "各就位"),
     RAND_READY("Prêts", "Set", "预备"),
@@ -135,10 +136,69 @@ enum class S(val fr: String, val en: String, val zh: String) {
     WARN_OK("Activer", "Enable", "启用"),
     WARN_CANCEL("Annuler", "Cancel", "取消"),
     HELP_TITLE("Aide", "Help", "帮助"),
+    CALIB_SECTION("Calibrage audio", "Audio calibration", "音频校准"),
+    CALIB_LAUNCH("LANCER LE CALIBRAGE", "START CALIBRATION", "开始校准"),
+    CALIB_N("Nombre de tests", "Number of tests", "测试次数"),
+    CALIB_STAT("Médiane ou moyenne", "Median or mean", "中位数或平均值"),
+    MEAN("Moyenne", "Mean", "平均值"),
+    CALIB_INTRO(
+        "À chaque coup de feu, appuie le plus vite possible sur le bouton du bas ou touche l'écran. Pas de vibration : réagis au son. N'appuie pas avant.",
+        "At each gun shot, press the bottom button or touch the screen as fast as you can. No vibration: react to the sound. Do not press early.",
+        "每次枪响时，尽快按底部按键或触摸屏幕。不振动：请根据声音反应。不要提前按。"
+    ),
+    CALIB_GO("Commencer", "Begin", "开始测试"),
+    CALIB_AGAIN("Relancer", "Run again", "重新测试"),
+    CALIB_QUIT("Quitter", "Quit", "退出"),
+    CALIB_READY("Prêt…", "Ready…", "准备…"),
+    CALIB_TEST("Test", "Test", "测试"),
+    CALIB_HINT("Bouton du bas ou écran", "Bottom button or screen", "底部按键或屏幕"),
+    CALIB_EARLY("Trop tôt : on recommence", "Too early: try again", "按早了：本次重来"),
+    CALIB_BUSY_RUN(
+        "Impossible : le chrono tourne. Arrête-le d'abord.",
+        "Not possible: the timer is running. Stop it first.",
+        "无法进行：秒表正在运行，请先停止。"
+    ),
+    CALIB_BUSY_RAND(
+        "Impossible : un départ random est en cours.",
+        "Not possible: a random start is in progress.",
+        "无法进行：随机起跑正在进行中。"
+    ),
+    CALIB_VOL0(
+        "Volume du départ à 0 : rien ne serait audible. Monte-le (Suivi avancé, Départ random activé).",
+        "Start volume is 0: nothing would be audible. Raise it (Advanced tracking, Random start on).",
+        "起跑音量为 0：将听不到任何声音。请调高（高级跟踪，开启随机起跑）。"
+    ),
+    CALIB_SOUND_ERR("Impossible de lire le coup de feu.", "Could not play the gun shot.", "无法播放枪声。"),
+    CALIB_TIMEOUT(
+        "Aucune réaction : calibrage arrêté, rien n'a été modifié.",
+        "No reaction: calibration stopped, nothing was changed.",
+        "未检测到反应：校准已停止，未做任何更改。"
+    ),
+    CALIB_CANCELLED(
+        "Calibrage annulé : rien n'a été modifié.",
+        "Calibration cancelled: nothing was changed.",
+        "校准已取消：未做任何更改。"
+    ),
+    CALIB_APPLIED(
+        "Appliquée automatiquement au réglage « Compensation audio ».",
+        "Applied automatically to the « Audio offset » setting.",
+        "已自动应用到“音频补偿”设置。"
+    ),
+    CALIB_CLAMP_LOW(
+        "Réaction sous la référence : compensation bornée à 0.",
+        "Reaction below the reference: offset limited to 0.",
+        "反应时间低于参考值：补偿值限定为 0。"
+    ),
+    CALIB_CLAMP_HIGH(
+        "Résultat borné au maximum (plus longue piste audio).",
+        "Result limited to the maximum (longest audio track).",
+        "结果限定为最大值（最长音频时长）。"
+    ),
+    CALIB_REACTIONS("Réactions", "Reactions", "各次反应时间"),
     ABOUT_BY(
-        "Raphaël GARIVIER avec Claude · Octobre 2026",
-        "Raphaël GARIVIER with Claude · October 2026",
-        "Raphaël GARIVIER 与 Claude · 2026年10月"
+        "Raphaël GARIVIER avec Claude · Novembre 2026",
+        "Raphaël GARIVIER with Claude · November 2026",
+        "Raphaël GARIVIER 与 Claude · 2026年11月"
     )
 }
 fun S.t(): String = when (Settings.lang) {

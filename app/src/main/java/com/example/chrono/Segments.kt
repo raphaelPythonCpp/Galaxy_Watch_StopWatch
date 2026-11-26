@@ -47,8 +47,8 @@ object Segments {
     private const val FRESH_MS = 4000L          // au-delà, une frontière franchie est marquée traitée sans vibrer
     private const val ALARM_SLACK_MS = 250L     // tolérance quand l'alarme arrive à la limite de la frontière
 
-    private fun exMs() = Settings.exTime.value.roundToInt() * 1000L
-    private fun restMs() = Settings.restTime.value.roundToInt() * 1000L
+    private fun exMs(): Long = Settings.exTimeMs
+    private fun restMs(): Long = Settings.restTimeMs
     private fun reps() = Settings.nbRep.value.roundToInt().coerceAtLeast(1)
 
     fun enabled(): Boolean = Settings.track && exMs() > 0L
@@ -305,7 +305,11 @@ object Segments {
             val e = Stopwatch.elapsed()
             val j = maxOf(done(c), crossedCount(e)) + 1     // première frontière ni traitée ni franchie
             val b = boundaryTime(j)
-            val at = System.currentTimeMillis() + (b - e).coerceAtLeast(0L)
+            // Segments de moins d'une seconde : pas de rafale d'alarmes (la boucle d'affichage garde la précision au premier plan)
+            // Le plancher ne dépend que du segment qui se termine à la frontière j : un segment normal n'est jamais retardé.
+            val segLen = if (j > 1) b - boundaryTime(j - 1) else exMs()
+            val minWait = if (segLen < 1000L) 1000L else 0L
+            val at = System.currentTimeMillis() + (b - e).coerceAtLeast(minWait)
             val how = armExact(c, at, pi(c, j), 4)
             startService(c)
             diag(c, "arm j=$j in=${b - e}ms $how")

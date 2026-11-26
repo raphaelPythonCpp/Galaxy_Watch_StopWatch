@@ -114,8 +114,7 @@ fun SettingsScreen() {
         item { ToggleRow(S.LOCK.t(), Settings.lock, true, accent, "lock") { Settings.setLock(ctx, it) } }
         if (Settings.lock) {
             item {
-                SliderRow(Settings.autoUnlock, accent,
-                    fmt = { v -> if (v < 0.5f) S.NEVER.t() else fmtDur((v * 60f).roundToInt()) })
+                SliderRow(Settings.autoUnlock, accent)
             }
             item {
                 ToggleRow(S.RING_IN_LOCK.t(), Settings.ringInLock, true, accent, "ringInLock") { Settings.setRingInLock(ctx, it) }
@@ -254,27 +253,24 @@ fun SettingsScreen() {
             item {
                 SliderRow(
                     Settings.vibe, accent,
-                    fmt = { v -> if (v < 0.05f) S.NONE.t() else Settings.vibe.text(v) + " %" },
+                    fmt = { v -> if (v < 0.05) S.NONE.t() else Settings.vibe.text(v) + " %" },
                     onRelease = { Stopwatch.buzz(ctx, true) }   // aperçu de l'intensité réglée
                 )
             }
-            item {
-                SliderRow(Settings.autoStop, accent,
-                    fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur(v.roundToInt()) })
-            }
+            item { SliderRow(Settings.autoStop, accent) }
         }
 
         // ---------------- À propos
         item {
             Column(Modifier.padding(top = 10.dp, bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Super StopWatch  v14", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
+                Text("Super StopWatch  v15", fontSize = 11.sp, color = Dim, textAlign = TextAlign.Center)
                 Text(S.ABOUT_BY.t(), fontSize = 9.sp, color = Dim, textAlign = TextAlign.Center)
             }
         }
     }
 }
 
-/** Sous-menu d'un curseur : explication, puis plage min / max (bornes d'origine larges, 100 pas, min < max). */
+/** Sous-menu d'un curseur : explication, puis plage min / max (échelle log réglable pour les temps, min < max). */
 @Composable
 fun RangeScreen() {
     val ctx = LocalContext.current
@@ -289,13 +285,20 @@ fun RangeScreen() {
             item { Text(S.NOT_FOUND.t(), fontSize = 12.sp, color = Dim) }
         } else {
             val step0 = spec.gap0
-            val span = spec.max0 - spec.min0
             item {
                 Text(spec.label.t(), fontSize = 14.sp, color = accent, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             }
             if (info != null) {
                 info.body().split("\n").filter { it.isNotBlank() }.forEach { line ->
                     item { Text(line, fontSize = 11.sp, color = Fg, modifier = Modifier.fillMaxWidth(0.88f)) }
+                }
+            }
+            if (spec.type == SliderType.TIME) {
+                item {
+                    ToggleRow(S.LOG_SCALE.t(), spec.log, true, accent, "logScale") {
+                        spec.log = it
+                        Settings.persistQuiet(ctx)
+                    }
                 }
             }
             item {
@@ -305,38 +308,8 @@ fun RangeScreen() {
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }
-            item {
-                SliderBar(
-                    S.MIN.t(), spec.display(spec.lo, step0),
-                    if (spec.nice > 0) spec.rangeFraction(spec.lo) else (spec.lo - spec.min0) / span, accent, true,
-                    { Settings.persistSliders(ctx) }, null
-                ) { f ->
-                    if (spec.nice > 0) {
-                        val nv = spec.rangeValue(f)
-                        spec.setRange(if (nv >= spec.hi) spec.niceBelow(spec.hi) else nv, spec.hi)
-                        return@SliderBar
-                    }
-                    val n = (f * 100f).roundToInt()
-                    val v = spec.fixRange(spec.min0 + n / 100f * span)      // entier pour un curseur entier
-                    spec.setRange(minOf(v, spec.hi - step0).coerceAtLeast(spec.min0), spec.hi)
-                }
-            }
-            item {
-                SliderBar(
-                    S.MAX.t(), spec.display(spec.hi, step0),
-                    if (spec.nice > 0) spec.rangeFraction(spec.hi) else (spec.hi - spec.min0) / span, accent, true,
-                    { Settings.persistSliders(ctx) }, null
-                ) { f ->
-                    if (spec.nice > 0) {
-                        val nv = spec.rangeValue(f)
-                        spec.setRange(spec.lo, if (nv <= spec.lo) spec.niceAbove(spec.lo) else nv)
-                        return@SliderBar
-                    }
-                    val n = (f * 100f).roundToInt()
-                    val v = spec.fixRange(spec.min0 + n / 100f * span)
-                    spec.setRange(spec.lo, maxOf(v, spec.lo + step0).coerceAtMost(spec.max0))
-                }
-            }
+            item { BoundBar(spec, true, accent) }
+            item { BoundBar(spec, false, accent) }
             item {
                 Box(
                     Modifier.fillMaxWidth(0.92f).height(40.dp)
@@ -348,6 +321,30 @@ fun RangeScreen() {
             }
         }
     }
+}
+
+/** Curseur de la borne min (isMin) ou max d'un SliderState. */
+@Composable
+private fun BoundBar(spec: SliderState, isMin: Boolean, accent: Color) {
+    val ctx = LocalContext.current
+    // Pendant un glissement la liste des crans est figée (elle dépend de la plage en cours de modification)
+    var frozen by remember(spec, isMin) { mutableStateOf<List<Double>?>(null) }
+    val list = frozen ?: spec.boundTicks()
+    val v = if (isMin) spec.lo else spec.hi
+    SliderBar(
+        label = if (isMin) S.MIN.t() else S.MAX.t(),
+        valueText = spec.display(v, spec.gap0),
+        fraction = spec.boundFraction(list, isMin),
+        fill = accent,
+        enabled = true,
+        onFinish = { frozen = null; Settings.persistSliders(ctx) },
+        onLong = null,
+        onStep = { d -> frozen = null; spec.stepBound(isMin, d) },
+        onChange = { f ->
+            val l = frozen ?: spec.boundTicks().also { frozen = it }
+            spec.setBound(isMin, spec.valueAt(l, f), l)
+        }
+    )
 }
 
 /** Explication d'un réglage (appui long sur un interrupteur, une case ou un curseur à valeurs discrètes). */
@@ -386,31 +383,12 @@ fun TrackScreen() {
     ScalingLazyColumn(Modifier.fillMaxSize(), state = listState, horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text(S.TRACK.t(), fontSize = 14.sp, color = Dim) }
         // Les deux précisions en haut : la précision distance règle le pas de tous les curseurs de distance, la précision temps celui de tous les curseurs de temps
-        item {
-            SliderRow(Settings.precisionDist, accent,
-                fmt = { v -> if (v < 0.05f) S.NONE.t() else fmtDist(v) })
-        }
-        item {
-            SliderRow(Settings.precisionTime, accent,
-                fmt = { v -> if (v < 0.5f) S.NONE.t() else fmtDur(v.roundToInt()) },
-                onRelease = resched)
-        }
-        item { SliderRow(Settings.distance, accent, fmt = { v -> if (v < 0.05f) S.OFF.t() else fmtDist(v) }) }
-        item {
-            SliderRow(
-                Settings.exTime, accent,
-                fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur(v.roundToInt()) },
-                onRelease = resched
-            )
-        }
+        item { SliderRow(Settings.precisionDist, accent) }
+        item { SliderRow(Settings.precisionTime, accent, onRelease = resched) }
+        item { SliderRow(Settings.distance, accent) }
+        item { SliderRow(Settings.exTime, accent, onRelease = resched) }
         item { SliderRow(Settings.nbRep, accent, unit = " ×", onRelease = resched) }
-        item {
-            SliderRow(
-                Settings.restTime, accent,
-                fmt = { v -> if (v < 0.5f) S.OFF.t() else fmtDur(v.roundToInt()) },
-                onRelease = resched
-            )
-        }
+        item { SliderRow(Settings.restTime, accent, onRelease = resched) }
         item { ToggleRow(S.TRACK_VIBE.t(), Settings.trackVibe, true, accent, "trackVibe") { Settings.setTrackVibe(ctx, it) } }
         item { ToggleRow(S.TRACK_RECAL.t(), Settings.trackRecal, true, accent, "trackRecal") { Settings.setTrackRecal(ctx, it) } }
 
@@ -438,10 +416,34 @@ fun TrackScreen() {
                 }
             }
             item {
-                SoundChoiceRow(S.RAND_SHOT.t(), 5, Settings.randShotSel, accent, onAcc, "randShot") { n ->
+                SoundChoiceRow(S.RAND_SHOT.t(), Sounds.shotCount, Settings.randShotSel, accent, onAcc, "randShot") { n ->
                     Settings.updateRandSound(ctx, 2, n); RandomStart.preview(ctx, 2, n)
                 }
             }
+        }
+
+        // ---------------- Calibrage de la compensation audio (tout en bas, que le départ random soit actif ou non)
+        item { Text(S.CALIB_SECTION.t(), fontSize = 13.sp, color = Dim) }
+        item { SliderRow(Settings.calibN, accent, quiet = true) }
+        item {
+            Row(Modifier.fillMaxWidth(0.92f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                HalfToggle(S.MEDIAN.t(), Settings.calibMedian, accent, onAcc, Modifier.weight(1f), 11f, "calibStat") {
+                    Settings.setCalibMedian(ctx, true)
+                }
+                HalfToggle(S.MEAN.t(), !Settings.calibMedian, accent, onAcc, Modifier.weight(1f), 11f, "calibStat") {
+                    Settings.setCalibMedian(ctx, false)
+                }
+            }
+        }
+        item { SliderRow(Settings.calibRef, accent, quiet = true) }
+        item {
+            Box(
+                Modifier.fillMaxWidth(0.92f).height(40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(SurfaceBtn)
+                    .tapOrHold(onTap = { Calibration.open() }, onHold = { Ui.openInfo("calibRun") }),
+                contentAlignment = Alignment.Center
+            ) { Text(S.CALIB_LAUNCH.t(), fontSize = 11.sp, color = Fg, fontWeight = FontWeight.Bold) }
         }
     }
 }

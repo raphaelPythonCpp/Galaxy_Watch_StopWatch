@@ -76,7 +76,7 @@ val OffTrack: Color get() = g(Color(0xFF3A3F47))
 val RingTrack: Color get() = g(Color(0xFF0E1218))
 val Tnum = TextStyle(fontFeatureSettings = "tnum")
 
-enum class Screen { MAIN, SETTINGS, RANGE, INFO, TRACK, HELP, HISTORY, SESSION, QR }
+enum class Screen { MAIN, SETTINGS, RANGE, INFO, TRACK, HELP, HISTORY, SESSION, QR, CALIB }
 
 object Ui {
     var screen by mutableStateOf(Screen.MAIN)
@@ -554,45 +554,72 @@ fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, accent: Color, 
     }
 }
 
-private fun snap(f: Float): Float = if (f < 0.03f) 0f else if (f > 0.97f) 1f else f
+/** Aimant aux extrémités (assez étroit pour ne sauter aucun des crans voisins). */
+private fun snapEnds(f: Float): Float = if (f < 0.012f) 0f else if (f > 0.988f) 1f else f
+
+/** Petit « − » ou « + » posé sur la barre : zone tactile large, pastille contrastée. */
+@Composable
+private fun StepButton(plus: Boolean, fill: Color, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val pill = stepColor(fill)
+    val ink = if (pill.luminance() > 0.35f) Color.Black else Color.White
+    Box(
+        modifier.width(34.dp).fillMaxHeight().clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier.size(22.dp).clip(CircleShape).background(pill).border(1.dp, ink, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.size(10.dp)) {
+                val w = 2.dp.toPx()
+                drawLine(ink, Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), w, StrokeCap.Round)
+                if (plus) drawLine(ink, Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), w, StrokeCap.Round)
+            }
+        }
+    }
+}
 
 /**
  * Barre de curseur générique : fraction 0..1, onChange pendant le glissement, onFinish au relâchement.
+ * onStep : boutons − / + (-1 / +1 cran), suivis de onFinish comme un relâchement.
  * onLong (optionnel) : appui long (temps de maintien) sans bouger -> explication + sous-menu min/max.
  */
 @Composable
 fun SliderBar(
     label: String, valueText: String, fraction: Float, fill: Color, enabled: Boolean,
-    onFinish: () -> Unit, onLong: (() -> Unit)?, onChange: (Float) -> Unit
+    onFinish: () -> Unit, onLong: (() -> Unit)?, onStep: (Int) -> Unit, onChange: (Float) -> Unit
 ) {
+    // pointerInput garde ses premiers rappels : on lit toujours les plus récents
+    val finish by rememberUpdatedState(onFinish)
+    val change by rememberUpdatedState(onChange)
     val base = Modifier.fillMaxWidth(0.92f)
         .alpha(if (enabled) 1f else 0.4f)
         .clip(RoundedCornerShape(20.dp))
         .background(RowBg)
     val holdable = if (onLong != null) base.holdToConfirm { onLong() } else base
-    Column(holdable.padding(horizontal = 14.dp, vertical = 8.dp)) {
+    Column(holdable.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, fontSize = 13.sp, color = Fg, modifier = Modifier.weight(1f))
             Text(valueText, fontSize = 12.sp, color = Dim, style = Tnum)
         }
         Spacer(Modifier.height(6.dp))
         Box(
-            Modifier.fillMaxWidth().height(18.dp)
-                .clip(RoundedCornerShape(9.dp))
+            Modifier.fillMaxWidth().height(26.dp)
+                .clip(RoundedCornerShape(13.dp))
                 .background(OffTrack)
                 .pointerInput(enabled) {
                     if (enabled) {
                         detectTapGestures { off ->
-                            onChange(snap((off.x / size.width).coerceIn(0f, 1f)))
-                            onFinish()
+                            change(snapEnds((off.x / size.width).coerceIn(0f, 1f)))
+                            finish()
                         }
                     }
                 }
                 .pointerInput(enabled) {
                     if (enabled) {
-                        detectHorizontalDragGestures(onDragEnd = { onFinish() }) { change, _ ->
-                            change.consume()
-                            onChange(snap((change.position.x / size.width).coerceIn(0f, 1f)))
+                        detectHorizontalDragGestures(onDragEnd = { finish() }, onDragCancel = { finish() }) { ch, _ ->
+                            ch.consume()
+                            change(snapEnds((ch.position.x / size.width).coerceIn(0f, 1f)))
                         }
                     }
                 }
@@ -601,25 +628,29 @@ fun SliderBar(
             if (fraction > 0.001f) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceAtMost(1f)).background(fill))
             }
+            // Enfants de la barre : leur appui est consommé (ni saut, ni appui long), le glissement reste possible
+            StepButton(false, fill, enabled, Modifier.align(Alignment.CenterStart)) { onStep(-1); finish() }
+            StepButton(true, fill, enabled, Modifier.align(Alignment.CenterEnd)) { onStep(1); finish() }
         }
     }
 }
 
-/** Curseur lié à un SliderState (100 pas entre lo et hi). Appui long -> explication + plage min/max (explication seule si valeurs discrètes). */
+/** Curseur lié à un SliderState. Appui long -> explication + plage min/max (explication seule sans sous-menu). */
 @Composable
 fun SliderRow(
     spec: SliderState, accent: Color, enabled: Boolean = true, unit: String = "",
-    fmt: ((Float) -> String)? = null, onRelease: () -> Unit = {}, quiet: Boolean = false
+    fmt: ((Double) -> String)? = null, onRelease: () -> Unit = {}, quiet: Boolean = false
 ) {
     val ctx = LocalContext.current
     SliderBar(
         label = spec.label.t(),
-        valueText = fmt?.invoke(spec.value) ?: (spec.display() + (if (spec.kind == 0 && spec.nice == 0) unit else "")),
+        valueText = fmt?.invoke(spec.value) ?: (spec.display() + (if (spec.type == SliderType.LINEAR) unit else "")),
         fraction = spec.fraction(),
         fill = accent,
         enabled = enabled,
         onFinish = { if (quiet) Settings.persistQuiet(ctx) else Settings.persistSliders(ctx); onRelease() },
         onLong = if (spec.hasRange) { { Ui.openRange(spec.key) } } else { { Ui.openInfo(spec.key) } },
+        onStep = { d -> spec.step(d) },
         onChange = { f -> spec.setFromFraction(f) }
     )
 }

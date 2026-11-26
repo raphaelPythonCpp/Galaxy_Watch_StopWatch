@@ -3,6 +3,7 @@ package com.example.chrono
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
@@ -24,13 +25,51 @@ object Sounds {
         R.raw.shot_synth_1, R.raw.shot_synth_2, R.raw.shot_synth_3, R.raw.shot_user_1, R.raw.shot_user_2
     )
 
-    /** kind 0 = « À vos marques » (selon la langue de l'appli), 1 = « Prêts » (idem), 2 = coup de feu ; n = 1..3 / 1..3 / 1..5. */
+    /** Nombre de coups de feu proposés. */
+    val shotCount: Int get() = shots.size
+
+    /** Repli si la durée des pistes ne peut pas être lue. */
+    const val FALLBACK_SHOT_MS = 1500L
+
+    /** Durée de la plus longue piste de coup de feu (dernière mesure ; repli tant que maxShotMs(c) n'a pas été appelé). */
+    @Volatile var shotMaxMs: Long = FALLBACK_SHOT_MS
+        private set
+    private var measured = false
+
+    /**
+     * Durée (ms) de la plus longue piste audio de coup de feu, LUE dans les ressources (une fois par processus). C'est le maximum de la
+     * compensation audio et du temps de réaction de référence du calibrage : ajouter une piste à `shots` suffit.
+     */
+    fun maxShotMs(c: Context): Long {
+        if (measured) return shotMaxMs
+        var best = 0L
+        for (id in shots) best = maxOf(best, durationMs(c, id))
+        shotMaxMs = if (best > 0L) best else FALLBACK_SHOT_MS
+        measured = true
+        return shotMaxMs
+    }
+
+    private fun durationMs(c: Context, resId: Int): Long {
+        val r = MediaMetadataRetriever()
+        return try {
+            c.applicationContext.resources.openRawResourceFd(resId).use { fd ->
+                r.setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
+                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            }
+        } catch (e: Exception) {
+            0L
+        } finally {
+            try { r.release() } catch (e: Exception) { }
+        }
+    }
+
+    /** kind 0 = « À vos marques » (selon la langue de l'appli), 1 = « Prêts » (idem), 2 = coup de feu ; n = 1..3 / 1..3 / 1..shotCount. */
     fun res(kind: Int, n: Int): Int {
         val lang = Settings.lang.ordinal.coerceIn(0, 2)     // FR, EN, ZH
         return when (kind) {
             0 -> marks[lang][(n - 1).coerceIn(0, 2)]
             1 -> ready[lang][(n - 1).coerceIn(0, 2)]
-            else -> shots[(n - 1).coerceIn(0, 4)]
+            else -> shots[(n - 1).coerceIn(0, shots.size - 1)]
         }
     }
 }

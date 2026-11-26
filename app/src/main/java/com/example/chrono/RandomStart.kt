@@ -169,8 +169,8 @@ object RandomStart {
         if (state != READY) return
         // Le coup de feu est CHARGÉ MAINTENANT (avant de calculer l'instant du tir) : au tir, il ne reste que start()
         try { sp(c).prepare(Sounds.res(2, Settings.randShotSel), Settings.randVolPct) } catch (e: Exception) { }
-        val mn = Settings.randMinSec * 1000L
-        val mx = Settings.randMaxSec * 1000L
+        val mn = Settings.randMinMs
+        val mx = Settings.randMaxMs
         val delay = if (mx > mn) mn + kotlin.random.Random.nextLong(mx - mn + 1L) else mn
         shotAt = System.currentTimeMillis() + delay
         setState(c, WAIT)

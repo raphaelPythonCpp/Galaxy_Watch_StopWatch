@@ -1,5 +1,5 @@
 ================================================================================
- SUPER STOPWATCH (v14) — DOCUMENT DE REPRISE POUR UNE IA
+ SUPER STOPWATCH (v15) — DOCUMENT DE REPRISE POUR UNE IA
  Projet : chronomètre Wear OS (Galaxy Watch 7) — Kotlin / Jetpack Compose for Wear OS
  Auteur / chef de projet : Raphaël GARIVIER — Génération du code : Claude (Anthropic), octobre-novembre 2026
 ================================================================================
@@ -27,7 +27,9 @@ l'utilisateur a refusé, et comment continuer.
   QR codes, suivi avancé (allure + exercice/repos), verrou tactile, mode éco, AOD, mode clair, 3 langues,
   10 logos, sliders à sous-menu min/max, explications par appui long, bague rotative, départ random (voix + coup de feu),
   sliders en listes rondes (échelle log), arrêt auto sur la dernière interaction, etc.
-- v14 (version actuelle) : sliders de temps/distance du suivi avancé en listes rondes log ; goals = vibration seule (jamais de tour), 3 couches
+- v15 (version actuelle) : curseurs de temps en millisecondes (log / linéaire), boutons − / + sur tous les curseurs, précisions
+  revues (voir 4.5), calibrage de la compensation audio (voir 4.12).
+- v14 : sliders de temps/distance du suivi avancé en listes rondes log ; goals = vibration seule (jamais de tour), 3 couches
   (UI / alarme / service de premier plan GoalService) ; arrêt auto = (temps - dernière interaction) > valeur ; DÉPART RANDOM (RandomStart.kt,
   SoundPlayer.kt, 23 fichiers audio). Voir 1.2, 4.5, 4.7, 4.11.
 - Signature : build `release` signé avec la clé de DEBUG de la machine GitHub => clé différente à chaque build
@@ -47,7 +49,7 @@ l'utilisateur a refusé, et comment continuer.
      `.github/workflows/build.yml` doit être créé/édité À LA MAIN dans l'interface web GitHub.
   e) GitHub Actions compile. En cas d'échec l'utilisateur colle le log ; Claude corrige (souvent une seule erreur
      visible à la fois, le compilateur Kotlin s'arrêtant à la première phase en échec).
-  f) L'utilisateur télécharge l'APK (Releases ou Artifacts) et l'installe avec adb sur la montre.
+  f) L'utilisateur télécharge l'APK (artifact de l'exécution GitHub Actions) et l'installe avec adb sur la montre.
 1.2 Versions (chronologie)
   - v1.0  : projet minimal (chrono Compose, tour via BackHandler), build debug.
   - v2.0  : build release R8, tile, complication, sauvegarde d'état (SharedPreferences), vibrations, snake/anneau,
@@ -62,9 +64,12 @@ l'utilisateur a refusé, et comment continuer.
   - v10   : logos (12), icône de l'appli par alias de lancement, QR codes (ZXing),
             suivi avancé (allure + exercice/repos par alarmes), page de séance avec statistiques,
             suppression d'une séance, aide, avertissements (mode clair / AOD), défilement auto de la liste,
-            icônes du haut en activité (appui long), 1 ligne par cran de bague, release GitHub automatique,
+            icônes du haut en activité (appui long), 1 ligne par cran de bague, release GitHub automatique (retirée depuis : artifact seul),
             README et ce document.
-  - v14   : (version actuelle) (1) sliders log : distance, temps d'exercice, repos, précisions et arrêt auto en listes rondes (NiceValues, 0 =
+  - v15   : (version actuelle) (A) curseurs de temps (maintien, déverrouillage, veille, arrêt auto, attente min / max, compensation audio,
+            réaction de référence) en ms, 20 à 50 crans calculés selon la plage, échelle log réglable ; (B) précisions 1 ms..24 h et 1 m..100 km,
+            exercice / repos en ms ; (C) boutons − / + sur tous les curseurs ; (D) calibrage de la compensation audio (Calibration.kt). Voir 4.5 et 4.12.
+  - v14   : (1) sliders log : distance, temps d'exercice, repos, précisions et arrêt auto en listes rondes (NiceValues, 0 =
             1er cran) ; arrêt auto en SECONDES (clé sl_autoStopS) ; (2) goals : vibration seule, jamais de tour ; 3 couches (UI, alarme, GoalService),
             dédoublonnage persistant segDone ; (3) arrêt auto sur la dernière interaction (lastAct), une seule vibration d'arrêt ; (4) DÉPART RANDOM :
             marques -> prêts -> attente aléatoire -> coup de feu (RandomStart.kt, SoundPlayer.kt, AlarmVolume), 23 sons dans res/raw ; permissions
@@ -158,7 +163,7 @@ Pattern : état global dans des `object` Kotlin (singletons) basés sur le syst�
 Même processus pour l'activité, le tile, la complication et les BroadcastReceiver ; chaque point d'entrée appelle
 `Stopwatch.load(ctx)` (qui appelle aussi `Settings.load(ctx)`), idempotent.
 
-Fichiers (app/src/main/java/com/example/chrono/, 19 fichiers .kt) :
+Fichiers (app/src/main/java/com/example/chrono/, 21 fichiers .kt) :
 
  MainActivity.kt      Activité + composable App() + Header().
                       - onKeyDown(KEYCODE_BACK) -> handleButton() : navigation retour ou Stopwatch.primary().
@@ -170,7 +175,7 @@ Fichiers (app/src/main/java/com/example/chrono/, 19 fichiers .kt) :
                         FLAG_KEEP_SCREEN_ON, veille douce après aodDelay, luminosité 0,01), écrans (when sur Ui.screen),
                         icônes du haut (TopIcon), fenêtre d'avertissement (WarnDialog), HoldRing.
  Components.kt        Thème (getters Fg/Bg/Dim/Soft/SurfaceBtn/RowBg/OffTrack/RingTrack avec inversion « mode clair »),
-                      enum Screen (MAIN, SETTINGS, RANGE, INFO, TRACK, HELP, HISTORY, SESSION, QR), object Ui
+                      enum Screen (MAIN, SETTINGS, RANGE, INFO, TRACK, HELP, HISTORY, SESSION, QR, CALIB), object Ui
                       (screen, rangeKey/From, infoKey/From, warn 0/1/2, ambient + soft, lastInput, savedPos), Ring (snake), HoldRing, tight() (texte compact), edgeFade(),
                       TimeText, AmbientScreen (toujours noir), icônes dessinées en Canvas (menu, historique, aide,
                       suivi, QR, cadenas), TopIcon, RoundButton, holdToConfirm() (appui long dynamique + vibration),
@@ -181,6 +186,7 @@ Fichiers (app/src/main/java/com/example/chrono/, 19 fichiers .kt) :
                       InfoScreen (explication d'un réglage), TrackScreen (suivi avancé), HelpScreen (HELP_SECTIONS),
                       HistoryScreen, SessionScreen (stats + tours + QR + suppression), QrScreen (HorizontalPager), LogoBox,
                       rememberSavedListState (position de liste mémorisée par écran).
+ Ticks.kt             (v15) calcul pur des crans des curseurs : Ticks.time(lo, hi, log), listes rondes TIME_LIST / DIST_LIST, thin().
  Infos.kt             class T3 (texte 3 langues), class Info(key, titre S, fr, en, zh) + Info.byKey = explication de
                       chaque réglage (clé = clé du SliderState ou nom d'interrupteur), HELP_SECTIONS (aide par rubriques).
  Settings.kt          class SliderState + object Settings (interrupteurs, sliders, getters, setX(c, v), load/persist).
@@ -188,6 +194,7 @@ Fichiers (app/src/main/java/com/example/chrono/, 19 fichiers .kt) :
  Segments.kt          Suivi avancé : cycle exercice/repos, frontières (index j), recalage, randShift, alarmes (armExact), check()
                       (dédoublonnage segDone), service de premier plan, bague.
  RandomStart.kt       Départ random (v14) : machine d'états, wake lock, minuteur + alarme de secours, aperçu des sons.
+ Calibration.kt       (v15) object Calibration (machine d'états du calibrage audio) + CalibScreen (voir 4.12).
  SoundPlayer.kt       Sounds (res/raw selon la langue), AlarmVolume (volume du flux ALARME, restauré), SoundPlayer (MediaPlayer, USAGE_ALARM).
  Receivers.kt         StopResetReceiver, AutoStopReceiver, SegmentReceiver, GoalService (service de premier plan léger, onTaskRemoved),
                       RandomStartReceiver, SentinelReceiver.
@@ -238,7 +245,7 @@ Aucune permission réseau.
     Rejeté : onDestroy/isFinishing (le geste « quitter » de Wear finit aussi l'activité), service avec onTaskRemoved
     SANS service de premier plan (arrêté ~1 min après la mise en arrière-plan), savedInstanceState (faux positifs).
     v14 : GoalService, lui, est de premier plan et a un onTaskRemoved (voir 4.7).
-  - Arrêt auto (v14) : Settings.autoStopSec (SECONDES, 0 = OFF, jusqu'à 86400 ; clé sl_autoStopS). Le chrono s'arrête quand
+  - Arrêt auto : Settings.autoStopMs (ms, 0 = OFF, jusqu'à 24 h ; clé ms_autoStopS depuis la v15). Le chrono s'arrête quand
     (temps - lastAct) > valeur ; `lastAct` = temps de chrono de la dernière interaction (Start / reprise, tour manuel, annulation de tour,
     coup de feu du départ random), persisté (clé « lastAct » de « stopwatch »), remis à 0 au reset. À l'arrêt le temps est figé EXACTEMENT à
     lastAct + valeur (elapsed() plafonné, enforceAutoStop). UNE seule vibration d'arrêt (buzzAutoStop : jamais deux à moins de 1,5 s ;
@@ -288,33 +295,36 @@ Aucune permission réseau.
   - Modifier composable : `detectTapGestures(onPress)` ; boucle à 16 ms ; durée lue À CHAQUE image dans
     `Settings.holdMs` (dynamique) ; à la réussite : Ui.hold = 0, vibration forte, puis action. Si on relâche : annulation.
   - Les actions n'ajoutent PAS leur propre vibration (ex. `Stopwatch.reset(ctx, false)`).
-4.5 Sliders (Settings.kt : SliderState)
-  - Chaque slider a value, lo, hi (plage de travail) et des bornes d'origine min0..max0 (larges). 100 pas entre lo et hi
-    (`setFromFraction`). `curve = 2` (autoUnlock, aodDelay) : échelle quadratique. `choices` : valeurs discrètes (plus utilisé pour les
-    précisions depuis la v14). `stepProvider` : pas imposé (hold = 0,1 s ; nbRep = 1 ; randMin/Max/Vol = 1 ; distance = précisionDist ;
-    exTime et restTime = précisionTime) ; la valeur est toujours un MULTIPLE du pas (ancré sur 0, pas sur lo).
-  - v14 : LISTES RONDES LOG. `nice` : 0 = non, 1 = temps (secondes, `NiceValues.time`, 0 puis 1 s ... 24 h), 2 = distance (mètres,
-    `NiceValues.dist`, 0 puis 0,1 m ... 100 km). Le 1er cran est toujours 0. Sliders concernés : precisionDist, precisionTime, distance, exTime,
-    restTime, autoStop (clé « autoStopS »). nbRep reste linéaire. `niceEff()` = liste filtrée sur [lo, hi] et sur les multiples du pas
-    (`NiceValues.isMultiple`, 0 toujours accepté) ; `snapNice()` recale la valeur après un changement de précision / de plage / une relecture.
-    Précision 0 = aucune contrainte. Sous-menu min/max : mêmes listes (`rangeFraction`, `rangeValue`, `niceBelow`, `niceAbove`, min < max).
-    Affichage : `fmtDur` (« 45 s », « 1 min 30 s », « 2 h 05 min ») et `fmtDist` (« 400 m », « 1,5 km »).
-  - v14 : `noRange = true` => pas de sous-menu min/max (appui long = InfoScreen seule) : precisionDist, precisionTime, randMin, randMax, randVol.
-    `hasRange` = choices == null && !noRange. `clampTo` : contrainte appliquée après chaque réglage (randMin <= randMax).
-  - v12 : `isInt = true` => valeur, lo et hi du sous-menu min/max sont des ENTIERS (nbRep, qrVer, qrEc, colR/G/B, ecoBright, vibe,
-    autoUnlock, autoStop, aodDelay, tailles chrono/btn/lap, exTime, restTime). Avant, les bornes du sous-menu étaient décimales
-    (ex. 1,99 / 34,65 pour nbRep) et rendaient la valeur décimale. Les autres curseurs sont décimaux, arrondis aux décimales de
-    leur pas (`quant`, `decsFor`) pour que la valeur réelle = la valeur affichée ; `fixRange()` arrondit les bornes du sous-menu.
-  - `kind` : 0 brut, 1 durée en secondes, 2 durée en minutes ; `display()` formate avec fmtDur / fmtDist, utilisé par SliderRow et RangeScreen.
-  - Appui long sur un slider (SliderRow) => RangeScreen : explication (Info.byKey[clé]) puis deux SliderBar Min/Max sur
-    les bornes d'origine, écart min 1 %, bouton « plage d'origine » à maintenir. Retour : `Ui.rangeFrom`. Curseurs sans sous-menu
-    (noRange : précisions, départ random) : InfoScreen seule. Interrupteurs / cases / logos : appui = action, appui long = InfoScreen
-    (`Ui.openInfo(clé)`). Retour : `Ui.infoFrom`. Les listes (Réglages, Suivi) gardent leur position (Ui.savedPos),
-    oubliée au retour à l'écran principal.
-  - Persistance : clés `sl_<key>`, `sl_<key>_lo`, `sl_<key>_hi` (floats). Arrêt auto : clé « sl_autoStopS » (NOUVELLE en v14 ; l'ancienne « sl_autoStop », en minutes, est ignorée). ecoBright ne persiste pas sa valeur (0 % à
-    chaque activation du mode éco). `persistSliders(ctx)` à chaque relâchement.
-  - SliderRow(spec, accent, enabled, unit, fmt, onRelease). Aimant aux extrémités (<3 % -> 0, >97 % -> 1), aucune
-    bande résiduelle à 0.
+4.5 Sliders (Settings.kt : SliderState + Ticks.kt) — refondu en v15
+  - UNE seule logique : un curseur = liste croissante de CRANS (`ticks()`) entre lo et hi. Glisser : fraction -> index ; boutons − / +
+    (SliderBar, sur la barre) = cran strictement inférieur / supérieur (`step(dir)`) puis mêmes callbacks qu'au relâchement. Pastille des
+    boutons : couleur complémentaire du remplissage (`stepColor`, Palette.kt). Les boutons sont des ENFANTS de la barre (ils consomment l'appui,
+    le glissement reste possible).
+  - Valeurs en Double ; `SliderType` : LINEAR (101 positions arrondies, ou tous les multiples du `stepProvider`), TIME (ms, log ou linéaire),
+    TIME_LIST (ms) et DIST_LIST (m) = valeurs rondes multiples de la précision.
+  - TIME (hold 100 ms..24 h ; autoUnlock, autoStop 0..24 h ; aodDelay 1 s..24 h ; randMin / randMax 0..1 min ; randLat et calibRef 0..max
+    audio) : plage de moins de 50 ms = CHAQUE ms ; sinon environ 40 valeurs jolies en log (0 forcé quand lo = 0, puis 1 ms), ou pas constant
+    « joli » (le plus petit donnant <= 50 crans). Interrupteur « Échelle log » dans le sous-menu min / max, ON par défaut, persisté.
+  - RÈGLE : max de la compensation audio (randLat) et du temps de réaction de référence (calibRef) = DURÉE DE LA PLUS LONGUE PISTE AUDIO DE
+    COUP DE FEU, lue dans les ressources par `Sounds.maxShotMs(context)` (MediaMetadataRetriever, repli 1500 ms) ; `Sounds.shotMaxMs` = dernière
+    mesure. Jamais de constante à retoucher : ajouter une piste au tableau `shots` suffit (le nombre de boutons suit : `Sounds.shotCount`).
+  - Listes : précision temps 1 ms..24 h, précision distance 1 m..100 km (noRange) ; distance par tour, temps d'exercice, repos : 0 = OFF puis
+    multiples de la précision. Plus de 50 valeurs : liste allégée (`Ticks.thin`, valeurs « core » gardées). Moins de 2 valeurs rondes : multiples
+    de la précision. La valeur d'une liste est recalée (`snap()`) sur la liste NON allégée ; une valeur TIME n'est jamais recalée sur un cran.
+  - Sous-menu min / max (`boundTicks`) : TIME et listes = crans de toute la plage d'origine + crans de la plage actuelle (en resserrant on zoome
+    jusqu'à chaque ms ; vérifié par simulation) ; LINEAR = 100 pas. La liste est figée pendant un glissement (BoundBar).
+  - randMin <= randMax : `clampTo` (réglage au curseur : on s'arrête à l'autre) et `afterRange` (changement de plage : l'autre est poussé).
+    `forceValue(v)` impose une valeur en élargissant lo / hi (utilisé par le calibrage ; appeler ensuite Settings.persistSliders ou persistQuiet).
+  - `calibRef` (clé « calibRef », défaut 200 ms, Info « calibRef », `Settings.calibRefMs`) : réaction de référence du calibrage (voir 4.12).
+  - Accès en ms : holdMs, autoUnlockMs, autoStopMs, aodDelayMs, exTimeMs, restTimeMs, randMinMs, randMaxMs, randLatMs, calibRefMs (Long).
+  - `noRange = true` (précisions, randVol) : appui long = explication seule. `isInt = true` : entier. `offZero = true` : 0 affiché « Désactivé ».
+    Affichage : `fmtTime(ms)` (« 250 ms », « 1,5 s », « 2 h 05 min »), `fmtDist`.
+  - Persistance : temps en Long, clés NOUVELLES `ms_<key>`, `ms_<key>_lo`, `ms_<key>_hi`, `ms_<key>_log` (lo / hi écrites seulement si
+    modifiées). Migration (lecture) des anciennes valeurs `sl_<key>` : hold s, autoUnlock min, aodDelay s, autoStopS s, randMin / randMax s,
+    randLat ms, precisionTime / exTime / restTime s ; anciennes bornes non reprises. Autres curseurs : `sl_<key>`, `_lo`, `_hi` (floats).
+    ecoBright ne persiste pas sa valeur. `persistSliders(ctx)` à chaque relâchement et à chaque − / +.
+  - SliderRow(spec, accent, enabled, unit, fmt, onRelease, quiet). Aimant aux extrémités (<1,2 % -> 0, >98,8 % -> 1).
+  - Alarme de frontière : si un segment dure moins d'1 s, l'alarme n'est jamais posée à moins d'1 s (la boucle d'affichage reste précise).
 4.6 Réglages (SettingsScreen)
   - Essentiels (toujours visibles) : mode éco (+ luminosité éco), temps de maintien, couleur RVB, verrou tactile (+ déverrouillage
     auto, « bague en verrou »), affichage permanent (avertissement ; + « délai avant veille » quand actif), réglages en
@@ -325,7 +335,7 @@ Aucune permission réseau.
     écart chrono -> cercles de -10 à 100 %), disposition, mise en page par défaut (appui long), vibrations, arrêt auto.
   - Supprimés en v11 : bague tactile de secours (circularScroll), « événements par ligne » (1 ligne par événement fixe).
 4.7 Suivi avancé (TrackScreen + Segments.kt + RandomStart.kt)
-  - En haut : précisionDist et précisionTime (listes rondes log, sans sous-menu). Puis distance par tour (0 = pas de colonne allure), temps
+  - En haut : précisionDist (1 m..100 km) et précisionTime (1 ms..24 h) (listes rondes, sans sous-menu). Puis distance par tour (0 = pas de colonne allure), temps
     d'exercice (0 = aucun objectif), répétitions (1 … 100, entier, linéaire), repos (0 = aucun), interrupteurs « Vibrations des objectifs »
     (trackVibe, défaut oui) et « Recalage des objectifs » (trackRecal, défaut NON). Tout en bas : DÉPART RANDOM (voir 4.11).
   - Frontières : la j-ième frontière (j >= 1) est la fin du j-ième segment du cycle (nbRep exercices, puis le repos s'il est > 0,
@@ -379,8 +389,8 @@ Aucune permission réseau.
   - Ongoing : notification IMPORTANCE_LOW + OngoingActivity (StopwatchPart) + action « Stop + Reset ».
 
 4.11 Départ random (RandomStart.kt, SoundPlayer.kt) — nouveau en v14
-  - Réglages (Suivi avancé, tout en bas ; sous-réglages visibles seulement si ON) : `randStart` (ON/OFF), `randMin` / `randMax` (0..60 s,
-    entiers, min <= max garanti ; `randMinSec` / `randMaxSec`), `randVol` (0..100 % du max du flux ALARME), `randFreeze` (« Chrono figé pendant
+  - Réglages (Suivi avancé, tout en bas ; sous-réglages visibles seulement si ON) : `randStart` (ON/OFF), `randMin` / `randMax` (0..1 min en
+    ms, min <= max garanti ; `randMinMs` / `randMaxMs`), `randVol` (0..100 % du max du flux ALARME), `randFreeze` (« Chrono figé pendant
     l'attente », défaut ON), choix des sons `randMarks` (1..3), `randReady` (1..3), `randShot` (1..5) : un appui sélectionne ET joue
     (RandomStart.preview, au volume du curseur ; aperçu arrêté à l'arrêt de l'activité). Utilisable si Settings.track && randStart (`enabled()`).
   - Séquence : le début de CHAQUE répétition d'exercice (la 1re incluse ; jamais le repos) se fait au coup de feu. « À vos marques » (voix)
@@ -391,7 +401,7 @@ Aucune permission réseau.
     Stopwatch.randomShot (horodatage du chrono dans ses 1res lignes) ; écriture disque / alarmes / notification viennent après. Repli : play()
     classique si le chargement échoue. La latence propre au haut-parleur (quelques dizaines de ms) n'est pas compensée (jamais mesurée sur la montre).
     Site de vérification : verif_coup_de_feu/index.html (hors projet Android).
-    Compensation audio (Settings.randLat, 0..5000 ms, sous-menu min/max actif, kind = 3 -> fmtMs) : SON, VIBRATION de départ et DÉBUT DU CHRONO doivent coïncider.
+    Compensation audio (Settings.randLat, 0..durée max d'une piste de tir, voir la RÈGLE en 4.5) : SON, VIBRATION de départ et DÉBUT DU CHRONO doivent coïncider.
     randomShot() : chrono figé -> startedEl = t0 + comp ; non figé -> tour auto à elapsed() + comp ; vibration et tour auto différés de comp (shotHandler).
   - Machine d'états (`RandomStart.state`, persistée dans les préférences « randstart » : st, frozen, first, shotAt, bT) :
     IDLE -> MARKS -> READY -> WAIT -> GO -> IDLE. `waiting` = MARKS..WAIT (le texte remplace le chrono, le bouton ANNULE, pas de tour manuel) ;
@@ -425,6 +435,30 @@ Aucune permission réseau.
     EN : Zira avec 3 réglages différents. Coups de feu synthétisés par un script ; fire_1 / fire_2 de l'utilisateur convertis. Tous les fichiers
     sont normalisés au maximum (le volume réel est piloté par le flux ALARME). Aucun fichier n'a été écouté sur montre.
 
+4.12 Calibrage de la compensation audio (Calibration.kt) — nouveau en v15
+  - Suivi avancé, TOUT EN BAS (visible que le départ random soit actif ou non) : curseur `calibN` (nombre de tests, entier 1..20, défaut 5,
+    sans plage), choix médiane (défaut) / moyenne (`Settings.calibMedian`, clé « calibMedian », Info « calibStat »), curseur `calibRef`,
+    bouton « LANCER LE CALIBRAGE » (appui long = Info « calibRun ») -> `Calibration.open()` -> écran Screen.CALIB (CalibScreen).
+  - Réutilise les réglages du départ random : randMin / randMax (attente), randShot (son), randVol (volume). Refusé (message) si le chrono
+    tourne, si une séquence de départ random est active ou si le volume est à 0 (`Calibration.blocker`). Un chrono arrêté avec un temps est permis.
+  - États : IDLE -> WAIT (SoundPlayer.prepare + minuteur Handler) -> LISTEN (startPrepared) -> PAUSE (1,5 s) -> WAIT ... -> DONE. Pendant WAIT et
+    LISTEN l'écran est identique (« Prêt… ») : aucun indice visuel. AUCUNE vibration.
+  - Réaction = instant de l'appui - instant du start() (SystemClock.elapsedRealtime, pris juste après startPrepared, comme randomShot).
+    L'instant de l'appui vient de l'HORODATAGE DE L'ÉVÉNEMENT (KeyEvent.downTime, PointerInputChange.uptimeMillis), ramené sur elapsedRealtime.
+  - Bouton physique : MainActivity.handleButton route vers `Calibration.press` tant que `Calibration.busy` (jamais de start / tour / retour) ;
+    au repos ou sur les résultats, le bouton fait « retour » vers le Suivi avancé (ignoré 800 ms après le dernier test). Toucher : toute la
+    surface sauf le bouton « Quitter » ; l'instant retenu est celui où le doigt se pose, mais l'appui n'est compté qu'au relâchement sans mouvement
+    (un balayage « retour » ne compte jamais) ; un doigt posé avant le début du test est ignoré.
+  - Appui avant le tir : le même test recommence. 10 s sans réaction après le tir : arrêt, rien modifié.
+  - Annulation (`Calibration.abort`, idempotent : minuteurs retirés, son stoppé, volume restauré) : « Quitter », retour système (BackHandler),
+    écran remplacé (DisposableEffect), onPause / onStop / onDestroy, passage en ambiant, écran éteint au moment du tir. Écran gardé allumé
+    par View.keepScreenOn ; la veille douce de l'affichage permanent est suspendue pendant les tests.
+  - Résultat : compensation = (médiane ou moyenne arrondie) - calibRefMs, bornée à [0, Sounds.shotMaxMs] ; appliquée à la fin du dernier test
+    par `Settings.randLat.forceValue` + `Settings.persistQuiet`. Écran de résultats : compensation, statistique, référence, chaque réaction,
+    Relancer / Quitter.
+  - NON vérifié sur montre : horodatage et moment de livraison du bouton physique (cas où Samsung ne livrerait l'appui qu'au relâchement),
+    latences réelles, maintien de l'écran allumé, restauration du volume.
+
 --------------------------------------------------------------------------------
 5. BUILD, RELEASE, INSTALLATION
 --------------------------------------------------------------------------------
@@ -434,9 +468,8 @@ Aucune permission réseau.
   profileinstaller 1.3.1, tiles 1.4.1, protolayout 1.2.1, concurrent-futures 1.2.0,
   watchface-complications-data-source-ktx 1.2.1, zxing core 3.5.3.
 - Workflow `.github/workflows/build.yml` : checkout, Java 17 (temurin), setup-gradle (8.7), `gradle assembleRelease
-  --no-daemon`, copie en `SuperStopWatch-v14-build<N>.apk`, upload-artifact, `softprops/action-gh-release@v2`
-  (tag `v14-build<N>`, `permissions: contents: write`). Si la release échoue : réglage du dépôt « Read and write
-  permissions ». Ce fichier doit être édité à la main sur github.com (dossier caché).
+  --no-daemon`, puis upload-artifact (artifact « ChronoWatch-apk » contenant `app-release.apk`). Il ne publie PAS de
+  Release GitHub. Ce fichier doit être édité à la main sur github.com (dossier caché).
 - Installation Windows : platform-tools, `adb pair IP:PORT`, `adb connect IP:PORT`, `adb install fichier.apk`.
   Mise à jour : `adb uninstall com.example.chrono` puis install (clés de debug différentes à chaque build ; vrai aussi en v14).
 - Améliorations possibles (non faites, pas voulues pour l'instant) : keystore stable en secret GitHub.
@@ -484,7 +517,7 @@ Aucune permission réseau.
 --------------------------------------------------------------------------------
 - « Snake » : arc blanc/dégradé qui tourne autour de l'écran (bague) ; aussi l'arc plein de progression d'un appui long.
 - « Bague » : le cercle extérieur dessiné ; « bague rotative/tactile » : l'entrée rotative du système (molette ou bezel tactile).
-- « tempsDeMaintien » : durée d'un appui long (Settings.hold, 0,1–10 s, 2 s par défaut).
+- « tempsDeMaintien » : durée d'un appui long (Settings.hold, 100 ms – 24 h, 2 s par défaut).
 - « Haut » / « bas » : zone temps+cercles / zone des tours.
 - « Essentiels » : réglages affichés même sans Personnalisation.
 - « Suivi avancé » : menu distance/allure + exercice/repos.

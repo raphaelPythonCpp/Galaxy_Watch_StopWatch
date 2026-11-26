@@ -57,7 +57,7 @@ object Stopwatch {
     private fun prefs(c: Context): SharedPreferences =
         c.applicationContext.getSharedPreferences("stopwatch", Context.MODE_PRIVATE)
     private fun lapFile(c: Context) = File(c.applicationContext.filesDir, "laps.log")
-    private fun limitMs(): Long = Settings.autoStopSec * 1000L
+    private fun limitMs(): Long = Settings.autoStopMs
     private fun lapsString() = laps.joinToString(";") { "${it.index},${it.lapTime},${it.total}" }
 
     /** Durée écoulée depuis le dernier Start : horloge monotone si possible, sinon heure murale. */
@@ -516,7 +516,7 @@ object Stopwatch {
         val t0 = SystemClock.elapsedRealtime()       // instant du start() du son (appelé juste après)
         // Compensation de la latence du haut-parleur : SON, VIBRATION et DÉBUT DU CHRONO doivent être perçus ensemble. Le son se fait entendre
         // ~comp ms après son start() ; le chrono (runDelta reste à 0 d'ici là), la vibration et le tour automatique suivent donc de comp ms.
-        val comp = Settings.randLatMs.toLong()
+        val comp = Settings.randLatMs
         if (frozen) {
             if (running) return -1L
             startedAt = now() + comp; startedEl = t0 + comp; startedBoot = bootCount(c)

@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
             lifecycle.addObserver(
                 AmbientLifecycleObserver(this, object : AmbientLifecycleObserver.AmbientLifecycleCallback {
                     override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
+                        Calibration.abort()
                         Ui.ambient = true
                     }
                     override fun onExitAmbient() {
@@ -92,7 +93,14 @@ class MainActivity : ComponentActivity() {
         Segments.check(this, "onStart")      // frontière franchie pendant l'absence (vibre seulement si très récente)
     }
 
+    // Calibrage : activité en pause (écran éteint compris), arrêtée ou détruite = annulation propre (son stoppé, volume restauré)
+    override fun onPause() {
+        Calibration.abort()
+        super.onPause()
+    }
+
     override fun onStop() {
+        Calibration.abort()
         Segments.uiVisible = false
         RandomStart.stopPreview()            // aperçu d'un son : arrêté, volume restauré
         Ui.hold = 0f
@@ -101,6 +109,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        Calibration.abort()
         RandomStart.stopPreview()
         super.onDestroy()
     }
@@ -115,8 +124,8 @@ class MainActivity : ComponentActivity() {
 
     /** Filet de sécurité : levée du verrou tactile une fois le délai réglé écoulé (même écran éteint entre-temps). */
     private fun checkAutoUnlock() {
-        val m = Settings.autoUnlockMin
-        if (Ui.locked && m > 0 && SystemClock.elapsedRealtime() - Ui.lockedAt >= m * 60_000L) {
+        val m = Settings.autoUnlockMs
+        if (Ui.locked && m > 0L && SystemClock.elapsedRealtime() - Ui.lockedAt >= m) {
             Ui.locked = false
         }
     }
@@ -124,7 +133,8 @@ class MainActivity : ComponentActivity() {
     // Bouton physique du bas (Retour) : appui simple uniquement (l'appui long appartient à Samsung)
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event?.repeatCount == 0) handleButton()
+            // downTime = instant réel de l'appui (sert à mesurer la réaction pendant le calibrage)
+            if (event?.repeatCount == 0) handleButton(event?.downTime ?: SystemClock.uptimeMillis())
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -133,7 +143,14 @@ class MainActivity : ComponentActivity() {
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean =
         if (keyCode == KeyEvent.KEYCODE_BACK) true else super.onKeyUp(keyCode, event)
 
-    private fun handleButton() {
+    private fun handleButton(pressedAt: Long) {
+        // Calibrage en cours : le bouton est la RÉACTION (jamais de start, de tour ni de retour)
+        if (Calibration.busy) {
+            Calibration.press(pressedAt)
+            Ui.wake()
+            return
+        }
+        if (Ui.screen == Screen.CALIB && Calibration.justFinished()) return
         val wasSoft = Ui.soft
         Ui.wake()                                   // note l'interaction ; sort de la veille douce
         if (wasSoft) return                         // veille douce : le premier appui réveille seulement
@@ -145,6 +162,7 @@ class MainActivity : ComponentActivity() {
                 Screen.SESSION -> Screen.HISTORY
                 Screen.RANGE -> Ui.rangeFrom
                 Screen.INFO -> Ui.infoFrom
+                Screen.CALIB -> Screen.TRACK
                 else -> Screen.MAIN
             }
             return
@@ -206,13 +224,13 @@ fun App() {
         wasRunning = running
     }
 
-    // Déverrouillage automatique après N minutes (0 = jamais)
-    LaunchedEffect(Ui.locked, Settings.autoUnlockMin) {
+    // Déverrouillage automatique après le délai réglé (0 = jamais)
+    LaunchedEffect(Ui.locked, Settings.autoUnlockMs) {
         if (Ui.locked) {
             Ui.lockedAt = SystemClock.elapsedRealtime()
-            val m = Settings.autoUnlockMin
-            if (m > 0) {
-                delay(m * 60_000L)
+            val m = Settings.autoUnlockMs
+            if (m > 0L) {
+                delay(m)
                 Ui.locked = false
             }
         }
@@ -228,8 +246,11 @@ fun App() {
         if (keepOn) Ui.lastInput = SystemClock.uptimeMillis()
         else if (Ui.soft) { Ui.soft = false; Ui.ambient = false }
         while (keepOn) {
-            delay(1000)
-            if (!Ui.ambient && SystemClock.uptimeMillis() - Ui.lastInput >= Settings.aodDelayMs) {
+            // réveil au plus toutes les secondes, plus tôt si l'échéance (réglée à la milliseconde) est proche
+            val left = Settings.aodDelayMs - (SystemClock.uptimeMillis() - Ui.lastInput)
+            delay(if (Ui.ambient) 1000L else left.coerceIn(50L, 1000L))
+            // pas de veille douce pendant un calibrage (elle remplacerait l'écran et l'annulerait)
+            if (!Ui.ambient && !Calibration.busy && SystemClock.uptimeMillis() - Ui.lastInput >= Settings.aodDelayMs) {
                 Ui.soft = true
                 Ui.ambient = true
             }
@@ -322,6 +343,7 @@ fun App() {
                 Ui.screen == Screen.HISTORY -> HistoryScreen()
                 Ui.screen == Screen.SESSION -> SessionScreen()
                 Ui.screen == Screen.QR -> QrScreen()
+                Ui.screen == Screen.CALIB -> CalibScreen()
                 else -> {
                     if (Settings.ringActive) {
                         Ring(Settings.snakePct / 100f) {
