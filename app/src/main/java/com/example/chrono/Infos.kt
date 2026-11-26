@@ -103,12 +103,9 @@ class Info(val key: String, val title: S, fr: String, en: String, zh: String) {
                 "Length of the snake, in % of the ring's circumference.\nA short snake is more precise, a long one is easier to read from afar.\nA long press opens the slider's min / max range.",
                 "光带长度，占圆环周长的百分比。\n短光带更精确，长光带更容易远看。\n长按可打开滑块的最小 / 最大范围。"),
             Info("sliderBtns", S.SLIDER_BTNS,
-                "Affiche un − à gauche et un + à droite de la barre de chaque curseur : un appui = un cran en moins ou en plus.
-Désactivé : on règle les curseurs seulement en glissant ou en touchant la barre.",
-                "Shows a − on the left and a + on the right of every slider bar: one tap = one step down or up.
-Off: sliders are only set by dragging or tapping the bar.",
-                "在每个滑块条的左侧显示 −，右侧显示 +：点一下减少或增加一格。
-关闭：只能通过滑动或点按滑块条来调节。"),
+                "Affiche un − à gauche et un + à droite de la barre de chaque curseur : un appui = un cran en moins ou en plus.\nDésactivé : on règle les curseurs seulement en glissant ou en touchant la barre.",
+                "Shows a − on the left and a + on the right of every slider bar: one tap = one step down or up.\nOff: sliders are only set by dragging or tapping the bar.",
+                "在每个滑块条的左侧显示 −，右侧显示 +：点一下减少或增加一格。\n关闭：只能通过滑动或点按滑块条来调节。"),
             Info("autoScroll", S.AUTO_SCROLL,
                 "Quand on est tout en haut de la liste, un nouveau tour reste visible en haut.\nSi on est plus bas, la vue ne bouge pas pour ne pas faire perdre sa place.",
                 "When you are at the very top of the list, a new lap stays visible at the top.\nIf you are further down, the view does not move so you keep your place.",
