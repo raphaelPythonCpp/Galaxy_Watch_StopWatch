@@ -102,6 +102,13 @@ class Info(val key: String, val title: S, fr: String, en: String, zh: String) {
                 "Longueur du snake, en % de la circonférence du cercle.\nUn petit snake est plus précis, un grand snake est plus lisible de loin.\nUn appui long ouvre la plage min / max du curseur.",
                 "Length of the snake, in % of the ring's circumference.\nA short snake is more precise, a long one is easier to read from afar.\nA long press opens the slider's min / max range.",
                 "光带长度，占圆环周长的百分比。\n短光带更精确，长光带更容易远看。\n长按可打开滑块的最小 / 最大范围。"),
+            Info("sliderBtns", S.SLIDER_BTNS,
+                "Affiche un − à gauche et un + à droite de la barre de chaque curseur : un appui = un cran en moins ou en plus.
+Désactivé : on règle les curseurs seulement en glissant ou en touchant la barre.",
+                "Shows a − on the left and a + on the right of every slider bar: one tap = one step down or up.
+Off: sliders are only set by dragging or tapping the bar.",
+                "在每个滑块条的左侧显示 −，右侧显示 +：点一下减少或增加一格。
+关闭：只能通过滑动或点按滑块条来调节。"),
             Info("autoScroll", S.AUTO_SCROLL,
                 "Quand on est tout en haut de la liste, un nouveau tour reste visible en haut.\nSi on est plus bas, la vue ne bouge pas pour ne pas faire perdre sa place.",
                 "When you are at the very top of the list, a new lap stays visible at the top.\nIf you are further down, the view does not move so you keep your place.",
@@ -328,8 +335,8 @@ val HELP_SECTIONS: List<Pair<T3, T3>> = listOf(
         "In Advanced tracking (at the very bottom): the start of every exercise repetition happens at the gun, after « On your marks », « Set » and a random delay (min to max).\nDuring the wait, text replaces the timer; the button cancels. The timer can stay frozen during the wait (option).\nVolume sets every sound; pick the voices and the gun shot: a tap plays them.",
         "在高级跟踪（最底部）：每次运动重复都在“各就位”“预备”和随机延迟（最短到最长）之后以枪声开始。\n等待期间文字代替秒表，按键可取消。等待时秒表可保持暂停（选项）。\n音量控制所有声音；选择语音和枪声：点按即可试听。"),
     T3("Calibrage audio", "Audio calibration", "音频校准") to T3(
-        "Tout en bas du Suivi avancé : « Lancer le calibrage » règle la compensation audio à partir de tes réactions au coup de feu.\nChoisis le nombre de tests, médiane ou moyenne, et ta réaction de référence (mesurée sur ordinateur).\nAu coup de feu, appuie sur le bouton du bas ou touche l'écran. Pas de vibration. Un appui trop tôt recommence le test ; « Quitter » annule.\nLe résultat est appliqué automatiquement. Son, volume et attente sont ceux du départ random.",
-        "At the very bottom of Advanced tracking: « Start calibration » sets the audio offset from your reactions to the gun shot.\nChoose the number of tests, median or mean, and your reference reaction (measured on a computer).\nAt the shot, press the bottom button or touch the screen. No vibration. Pressing too early restarts the test; « Quit » cancels.\nThe result is applied automatically. Sound, volume and wait are those of the random start.",
+        "Tout en bas du Suivi avancé : « Lancer le calibrage » règle la compensation audio à partir de tes réactions au coup de feu.\nChoisis le nombre de tests, médiane ou moyenne, et ta réaction de référence (mesurée sur ordinateur).\nAu coup de feu, appuie sur le bouton du bas ou touche l'écran. Pas de vibration. Un appui trop tôt recommence le test ; « Quitter » annule.\nLe résultat est appliqué automatiquement. Son, volume et attente sont ceux du départ random : le calibrage n'apparaît que si « Départ random » est activé.",
+        "At the very bottom of Advanced tracking: « Start calibration » sets the audio offset from your reactions to the gun shot.\nChoose the number of tests, median or mean, and your reference reaction (measured on a computer).\nAt the shot, press the bottom button or touch the screen. No vibration. Pressing too early restarts the test; « Quit » cancels.\nThe result is applied automatically. Sound, volume and wait are those of the random start: calibration only appears when « Random start » is on.",
         "位于高级跟踪最底部：“开始校准”根据你对枪声的反应设置音频补偿。\n可选择测试次数、中位数或平均值，以及参考反应时间（在电脑上测得）。\n枪响时按底部按键或触摸屏幕。不振动。按早了本次重来；点“退出”取消。\n结果自动应用。声音、音量和等待时间沿用随机起跑的设置。"),
     T3("Historique", "History", "历史记录") to T3(
         "Chaque Reset enregistre la séance (50 au maximum, nom = date et heure).\nGlissez une séance vers la droite pour l'ouvrir : statistiques (meilleur, pire, moyenne, médiane, écart-type, régularité), liste des tours et codes QR.\nMaintenez une séance pour la supprimer, ou le bouton du bas de la liste pour tout effacer.",

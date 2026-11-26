@@ -177,6 +177,7 @@ fun SettingsScreen() {
             item { ToggleRow(S.RING.t(), Settings.ringActive, !eco, accent, "ring") { Settings.setRing(ctx, it) } }
             item { SliderRow(Settings.snake, accent, !eco, " %") }
             item { ToggleRow(S.AUTO_SCROLL.t(), Settings.autoScroll, true, accent, "autoScroll") { Settings.setAutoScroll(ctx, it) } }
+            item { ToggleRow(S.SLIDER_BTNS.t(), Settings.sliderBtns, true, accent, "sliderBtns") { Settings.updateSliderBtns(ctx, it) } }
             item { ToggleRow(S.LEFTY.t(), Settings.lefty, true, accent, "lefty") { Settings.setLefty(ctx, it) } }
             item { ToggleRow(S.UNDO_BTN.t(), Settings.undoBtn, true, accent, "undo") { Settings.setUndoBtn(ctx, it) } }
             item { ToggleRow(S.SECONDS.t(), Settings.secMode, true, accent, "sec") { Settings.setSecMode(ctx, it) } }
@@ -420,9 +421,8 @@ fun TrackScreen() {
                     Settings.updateRandSound(ctx, 2, n); RandomStart.preview(ctx, 2, n)
                 }
             }
-        }
 
-        // ---------------- Calibrage de la compensation audio (tout en bas, que le départ random soit actif ou non)
+        // ---------------- Calibrage de la compensation audio (tout en bas, seulement avec le départ random)
         item { Text(S.CALIB_SECTION.t(), fontSize = 13.sp, color = Dim) }
         item { SliderRow(Settings.calibN, accent, quiet = true) }
         item {
@@ -444,6 +444,7 @@ fun TrackScreen() {
                     .tapOrHold(onTap = { Calibration.open() }, onHold = { Ui.openInfo("calibRun") }),
                 contentAlignment = Alignment.Center
             ) { Text(S.CALIB_LAUNCH.t(), fontSize = 11.sp, color = Fg, fontWeight = FontWeight.Bold) }
+        }
         }
     }
 }

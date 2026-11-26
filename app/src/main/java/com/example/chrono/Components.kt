@@ -629,8 +629,10 @@ fun SliderBar(
                 Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceAtMost(1f)).background(fill))
             }
             // Enfants de la barre : leur appui est consommé (ni saut, ni appui long), le glissement reste possible
-            StepButton(false, fill, enabled, Modifier.align(Alignment.CenterStart)) { onStep(-1); finish() }
-            StepButton(true, fill, enabled, Modifier.align(Alignment.CenterEnd)) { onStep(1); finish() }
+            if (Settings.sliderBtns) {
+                StepButton(false, fill, enabled, Modifier.align(Alignment.CenterStart)) { onStep(-1); finish() }
+                StepButton(true, fill, enabled, Modifier.align(Alignment.CenterEnd)) { onStep(1); finish() }
+            }
         }
     }
 }

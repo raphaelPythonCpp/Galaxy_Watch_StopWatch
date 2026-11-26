@@ -16,6 +16,9 @@ Précisions
 Boutons − et +
 - Sur tous les curseurs, y compris min et max : un appui = un cran exactement, couleur complémentaire de la barre.
 
+Boutons − / + des curseurs : interrupteur dans Réglages > Personnalisation (activé par défaut).
+Calibrage : visible seulement quand « Départ random » est activé.
+
 Calibrage de la compensation audio (tout en bas du Suivi avancé)
 - Réglages : nombre de tests (1 à 20, défaut 5), médiane (défaut) ou moyenne, réaction de référence (défaut 200 ms).
 - Chaque test : « Prêt… », attente aléatoire (min à max du départ random), coup de feu choisi au volume du départ ; réaction au bouton du bas

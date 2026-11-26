@@ -82,6 +82,7 @@ enum class S(val fr: String, val en: String, val zh: String) {
     MARKERS("Triangles ▲▼", "Triangles ▲▼", "三角标记 ▲▼"),
     TRACK_VIBE("Vibrations des objectifs", "Goal vibrations", "目标振动"),
     AUTO_SCROLL("Défilement auto", "Auto-scroll", "自动滚动"),
+    SLIDER_BTNS("Boutons − / + des curseurs", "Slider − / + buttons", "滑块的 − / + 按钮"),
     RUN_ICONS("Réglages en activité", "Settings while running", "运行中显示设置"),
     HELP_TOGGLE("Aide", "Help", "帮助"),
     TRACK("Suivi avancé", "Advanced tracking", "高级跟踪"),

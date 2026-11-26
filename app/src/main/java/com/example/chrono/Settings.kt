@@ -370,6 +370,9 @@ object Settings {
         private set
     var autoScroll by mutableStateOf(true)
         private set
+    /** Boutons − / + sur les curseurs (Personnalisation), activés par défaut. */
+    var sliderBtns by mutableStateOf(true)
+        private set
     var runIcons by mutableStateOf(true)
         private set
     var help by mutableStateOf(false)
@@ -581,6 +584,7 @@ object Settings {
         custom = s.getBoolean("custom", false)
         light = s.getBoolean("light", false)
         autoScroll = s.getBoolean("autoScroll", true)
+        sliderBtns = s.getBoolean("sliderBtns", true)
         runIcons = s.getBoolean("runIcons", true)
         help = s.getBoolean("help", false)
         track = s.getBoolean("track", false)
@@ -621,6 +625,7 @@ object Settings {
     fun setFade(c: Context, v: Boolean) { fade = v; p(c).edit().putBoolean("fade", v).apply() }
     fun setCustom(c: Context, v: Boolean) { custom = v; p(c).edit().putBoolean("custom", v).apply() }
     fun setLight(c: Context, v: Boolean) { light = v; p(c).edit().putBoolean("light", v).apply() }
+    fun updateSliderBtns(c: Context, v: Boolean) { sliderBtns = v; p(c).edit().putBoolean("sliderBtns", v).apply() }
     fun setAutoScroll(c: Context, v: Boolean) { autoScroll = v; p(c).edit().putBoolean("autoScroll", v).apply() }
     fun setRunIcons(c: Context, v: Boolean) { runIcons = v; p(c).edit().putBoolean("runIcons", v).apply() }
     fun setHelp(c: Context, v: Boolean) { help = v; p(c).edit().putBoolean("help", v).apply() }
